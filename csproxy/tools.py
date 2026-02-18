@@ -5,8 +5,6 @@ cs-proxy-tools - Proxied wrappers for common security tools.
 Provides Python functions that run security tools with SOCKS5 proxy
 arguments automatically applied.
 
-Equivalent to: tools-wrapper.sh (source-able shell functions).
-
 Can be used as a Python library:
     from csproxy.tools import pcurl, pnmap, ipcheck
 

@@ -4,8 +4,6 @@ cs-serve - File server via GitHub Codespaces.
 
 Hosts files, directories, redirect servers, and custom HTTP response servers
 through a Codespace, producing public HTTPS URLs on app.github.dev.
-
-Equivalent to: cs-serve.sh
 """
 
 import subprocess

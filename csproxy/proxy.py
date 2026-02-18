@@ -5,8 +5,6 @@ cs-proxy - SOCKS5/HTTP proxy management via GitHub Codespaces.
 Converts GitHub Codespaces into SOCKS5 and HTTP proxies by establishing
 SSH tunnels. Provides automatic Codespace selection, reconnect logic, and
 integration with common security tools.
-
-Equivalent to: cs-proxy.sh
 """
 
 import os

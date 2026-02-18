@@ -4,8 +4,6 @@ cs-wg - WireGuard tunnel through GitHub Codespaces.
 
 Sets up a WireGuard VPN between the local machine and a Codespace,
 enabling full transparent proxying of all traffic.
-
-Equivalent to: cs-wg.sh
 """
 
 import os
