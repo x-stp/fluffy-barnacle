@@ -2,15 +2,15 @@
   <img src="assets/logo.png" alt="fluffy-barnacle" width="280">
 </p>
 
-# fluffy-barnacle
+# Fluffy-Barnacle
 
-**Disposable network infrastructure powered by GitHub Codespaces. SOCKS5 proxies, HTTPS file hosting, and WireGuard VPN tunnels -- free and ephemeral.**
+**Disposable, ephemeral network infrastructure powered by GitHub Codespaces.** 
+
+Deploy SOCKS5 proxies, HTTPS file hosting, and WireGuard tunnels in seconds, for free.
 
 ## Overview
 
-fluffy-barnacle is an operator-focused toolkit built around GitHub Codespaces as free, ephemeral network infrastructure. It wraps the GitHub CLI to automate the full lifecycle -- spinning up a Codespace, establishing SSH tunnels, forwarding ports, and tearing everything down cleanly.
-
-Because Codespace IPs rotate each time you create one, it also works as a quick egress rotation mechanism.
+Fluffy-Barnacle is an operator-focused toolkit that turns GitHub Codespaces into free, ephemeral network infrastructure. It provides a suite of CLI tools for rapid deployment and teardown.
 
 ## Tools
 
