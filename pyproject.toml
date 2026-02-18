@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cs-proxy"
+version = "1.0.0"
+description = "Transform GitHub Codespaces into SOCKS5 proxies, file servers, and WireGuard VPN tunnels"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+keywords = ["proxy", "socks5", "github", "codespaces", "security", "wireguard", "vpn"]
+authors = [
+    {name = "cs-proxy contributors"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: Proxy Servers",
+    "Topic :: Security",
+    "Topic :: System :: Networking",
+]
+
+dependencies = [
+    "pyyaml>=6.0",
+    "colorama>=0.4.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "flake8>=6.0",
+    "mypy>=1.0",
+]
+docs = [
+    "mkdocs>=1.5",
+    "mkdocs-material>=9.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/dstours/fluffy-barnacle"
+Documentation = "https://dstours.github.io/fluffy-barnacle/"
+Repository = "https://github.com/dstours/fluffy-barnacle"
+Issues = "https://github.com/dstours/fluffy-barnacle/issues"
+
+[project.scripts]
+cs-proxy = "csproxy.cli:main_proxy"
+cs-serve = "csproxy.cli:main_serve"
+cs-wg = "csproxy.cli:main_wg"
+cs-tools = "csproxy.tools:main_tools"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["csproxy*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"

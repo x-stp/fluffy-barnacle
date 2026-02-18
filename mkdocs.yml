@@ -1,0 +1,78 @@
+site_name: Fluffy Barnacle
+site_url: https://dstours.github.io/fluffy-barnacle/
+site_description: Disposable network infrastructure powered by GitHub Codespaces.
+site_author: dstours
+repo_url: https://github.com/dstours/fluffy-barnacle
+repo_name: dstours/fluffy-barnacle
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.expand
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - toc:
+      permalink: true
+  - tables
+  - attr_list
+  - md_in_html
+
+nav:
+  - Home: index.md
+  - Quick Start: quickstart.md
+  - User Guide:
+    - Installation: user-guide/installation.md
+    - Configuration: user-guide/configuration.md
+    - Command Reference:
+      - Overview: user-guide/command-reference/index.md
+      - cs-proxy: user-guide/command-reference/cs-proxy.md
+      - cs-serve: user-guide/command-reference/cs-serve.md
+      - cs-wg: user-guide/command-reference/cs-wg.md
+      - cs-tools: user-guide/command-reference/cs-tools.md
+  - Use Cases:
+    - Overview: use-cases/index.md
+    - Proxy Rotation: use-cases/proxy-rotation.md
+    - File Hosting: use-cases/file-hosting.md
+    - VPN Tunneling: use-cases/vpn-tunneling.md
+    - Burp Integration: use-cases/burp-integration.md
+  - Development:
+    - Architecture: development/architecture.md
+    - Python API: development/python-api.md
+    - Contributing: development/contributing.md

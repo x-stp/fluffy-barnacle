@@ -1,0 +1,13 @@
+# Core dependencies for cs-proxy
+# Python 3.8+ required
+
+# Configuration management
+pyyaml>=6.0
+
+# Cross-platform colored terminal output
+colorama>=0.4.6
+
+# Optional but recommended dependencies
+# Uncomment if needed:
+# requests>=2.31.0     # HTTP requests (may be needed for some features)
+# psutil>=5.9.0        # Process management helpers
