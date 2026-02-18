@@ -3,21 +3,21 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cs-proxy"
+name = "fluffy-barnacle"
 version = "1.0.0"
-description = "Transform GitHub Codespaces into SOCKS5 proxies, file servers, and WireGuard VPN tunnels"
+description = "Disposable, ephemeral network infrastructure powered by GitHub Codespaces"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
-keywords = ["proxy", "socks5", "github", "codespaces", "security", "wireguard", "vpn"]
+license = {text = "Apache-2.0"}
+keywords = ["bugbounty", "codespaces", "ephemeral", "github", "infrastructure", "red-team", "proxy", "socks5", "security", "wireguard", "vpn"]
 authors = [
-    {name = "cs-proxy contributors"}
+    {name = "dstours"}
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Information Technology",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
