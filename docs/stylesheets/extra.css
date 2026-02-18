@@ -1,0 +1,21 @@
+/* Softer dark mode overrides */
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #1e1e2e;
+  --md-default-bg-color--light: #252536;
+  --md-default-fg-color: #cdd6f4;
+  --md-default-fg-color--light: #bac2de;
+  --md-code-bg-color: #181825;
+  --md-code-fg-color: #cdd6f4;
+  --md-typeset-color: #cdd6f4;
+}
+
+/* Softer code blocks */
+[data-md-color-scheme="slate"] .highlight code,
+[data-md-color-scheme="slate"] .highlighttable code {
+  background: #181825;
+}
+
+/* Softer table rows */
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) tr:hover {
+  background-color: #2a2a3c;
+}
