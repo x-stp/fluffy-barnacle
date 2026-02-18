@@ -500,9 +500,7 @@ def cmd_delete(args, config: Config, gh: GitHubManager) -> int:
 
     # Delete codespaces
     for name in to_delete:
-        logger.info(f"Deleting Codespace: {name}")
         gh.delete_codespace(name, force=True)
-        logger.info(f"Deleted: {name}")
 
     config.set('codespace_name', '')
     config.save()
