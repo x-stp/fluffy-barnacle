@@ -139,6 +139,9 @@ def main_serve(argv=None):
     sp_custom.add_argument('content_type', nargs='?', default='text/plain', help='Content-Type')
     sp_custom.add_argument('status', nargs='?', type=int, default=200, help='HTTP status code')
 
+    sp_capture = subparsers.add_parser('capture', help='Capture and log POST data')
+    sp_capture.add_argument('port', nargs='?', type=int, default=9999, help='Port (default: 9999)')
+
     sp_stop = subparsers.add_parser('stop', help='Stop server on a port')
     sp_stop.add_argument('port', nargs='?', type=int, default=9999, help='Port (default: 9999)')
 

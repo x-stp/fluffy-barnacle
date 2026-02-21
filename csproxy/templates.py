@@ -127,6 +127,107 @@ print('=' * 50, flush=True)
 start_server(CustomHandler, {PORT})
 """
 
+CAPTURE_SERVER_SCRIPT = _START_HELPER + """\
+import base64, json
+from http.server import BaseHTTPRequestHandler
+
+CAPTURE_DIR = '/tmp/serve/captures'
+os.makedirs(CAPTURE_DIR, exist_ok=True)
+
+capture_count = 0
+
+def is_base64(data):
+    try:
+        if len(data) < 4:
+            return False
+        cleaned = data.strip()
+        decoded = base64.b64decode(cleaned, validate=True)
+        if base64.b64encode(decoded).rstrip(b'=') == cleaned.rstrip(b'=').replace(b'\\n', b''):
+            return True
+    except Exception:
+        pass
+    return False
+
+class CaptureHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        print(f'[GET] {{self.path}} from {{self.client_address[0]}}', flush=True)
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/plain')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        body = b'OK'
+        self.send_header('Content-Length', len(body))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        global capture_count
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length) if content_length > 0 else b''
+
+        capture_count += 1
+        seq = f'{{capture_count:03d}}'
+        timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+
+        print(f'', flush=True)
+        print(f'[CAPTURE #{{seq}}] {{timestamp}}', flush=True)
+        print(f'  Method:  {{self.command}} {{self.path}}', flush=True)
+        print(f'  Client:  {{self.client_address[0]}}', flush=True)
+        print(f'  Length:  {{len(post_data)}} bytes', flush=True)
+        for header, value in self.headers.items():
+            print(f'  {{header}}: {{value}}', flush=True)
+
+        raw_path = os.path.join(CAPTURE_DIR, f'capture_{{seq}}.bin')
+        with open(raw_path, 'wb') as f:
+            f.write(post_data)
+        print(f'  Saved:   {{raw_path}}', flush=True)
+
+        if post_data and is_base64(post_data):
+            try:
+                decoded = base64.b64decode(post_data.strip())
+                decoded_path = os.path.join(CAPTURE_DIR, f'capture_{{seq}}.decoded')
+                with open(decoded_path, 'wb') as f:
+                    f.write(decoded)
+                print(f'  Base64:  Detected and decoded ({{len(decoded)}} bytes) -> {{decoded_path}}', flush=True)
+                try:
+                    print(f'  Preview: {{decoded[:200].decode("utf-8", errors="replace")}}', flush=True)
+                except Exception:
+                    print(f'  Preview: (binary data, {{len(decoded)}} bytes)', flush=True)
+            except Exception as e:
+                print(f'  Base64:  Detection passed but decode failed: {{e}}', flush=True)
+        else:
+            try:
+                print(f'  Preview: {{post_data[:200].decode("utf-8", errors="replace")}}', flush=True)
+            except Exception:
+                print(f'  Preview: (binary data, {{len(post_data)}} bytes)', flush=True)
+
+        print(f'', flush=True)
+
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/plain')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        body = f'Captured #{{seq}}'.encode()
+        self.send_header('Content-Length', len(body))
+        self.end_headers()
+        self.wfile.write(body)
+
+    do_PUT = do_PATCH = do_POST
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', '*')
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+
+print(f'Capture server on port {PORT}', flush=True)
+print(f'Saving captures to: {{CAPTURE_DIR}}', flush=True)
+print('=' * 50, flush=True)
+start_server(CaptureHandler, {PORT})
+"""
+
 
 # =============================================================================
 # WireGuard remote setup script template
