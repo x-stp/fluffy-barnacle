@@ -79,6 +79,45 @@ cs-serve custom 9999 '<html>test</html>' text/html 200
 | `content_type` | Content-Type header | `text/plain` |
 | `status` | HTTP status code | `200` |
 
+### `capture`
+
+Start a catch-all capture server that logs and saves incoming POST data. Base64-encoded payloads are auto-detected and decoded.
+
+```bash
+cs-serve capture
+cs-serve capture 8080
+```
+
+When data is received, the server logs the request details (method, path, client IP, headers) and a content preview in real time. If the body is valid base64, it is automatically decoded and the decoded content is shown.
+
+On `Ctrl+C`, all captured files are downloaded from the Codespace to your current working directory.
+
+**Arguments:**
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `port` | Port to listen on | `9999` |
+
+**Saved files:**
+
+| File | Contents |
+|------|----------|
+| `capture_001.bin` | Raw POST body |
+| `capture_001.decoded` | Base64-decoded content (only if base64 detected) |
+
+**Example output:**
+
+```
+[CAPTURE #001] 2026-02-20 14:30:00
+  Method:  POST /callback
+  Client:  203.0.113.42
+  Length:  16 bytes
+  Content-Type: application/octet-stream
+  Saved:   /tmp/serve/captures/capture_001.bin
+  Base64:  Detected and decoded (12 bytes) -> capture_001.decoded
+  Preview: Hello World!
+```
+
 ### `stop`
 
 Stop a server running on a specific port.

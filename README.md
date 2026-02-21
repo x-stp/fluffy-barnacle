@@ -28,7 +28,7 @@ Full documentation at **[https://dstours.github.io/fluffy-barnacle/](https://dst
 | Tool | Description |
 |------|-------------|
 | **cs-proxy** | SOCKS5 and HTTP proxy via SSH tunnel with auto-reconnect and Burp Suite integration |
-| **cs-serve** | Instant public HTTPS file hosting, redirect servers, and custom HTTP responses via `*.app.github.dev` |
+| **cs-serve** | Instant public HTTPS file hosting, redirect servers, custom HTTP responses, and data capture via `*.app.github.dev` |
 | **cs-wg** | Full WireGuard VPN tunnel with route management and traffic monitoring |
 | **cs-tools** | Drop-in wrappers for nmap, ffuf, httpx, nuclei, sqlmap with automatic SOCKS5 proxy arguments |
 
@@ -62,6 +62,7 @@ cs-proxy burp               # upstream proxy config for Burp Suite
 cs-serve file payload.bin                               # serve a file
 cs-serve redirect http://169.254.169.254/metadata/      # SSRF redirect
 cs-serve custom 9999 '{"pwned":true}' application/json  # custom response
+cs-serve capture                                        # capture POST data
 ```
 
 ### WireGuard VPN

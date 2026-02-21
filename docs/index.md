@@ -17,7 +17,7 @@ Fluffy-Barnacle is an operator-focused toolkit that turns GitHub Codespaces into
 | Tool | Description |
 |------|-------------|
 | **[cs-proxy](user-guide/command-reference/cs-proxy.md)** | SOCKS5 and HTTP proxy via SSH tunnel with auto-reconnect and Burp Suite integration |
-| **[cs-serve](user-guide/command-reference/cs-serve.md)** | Instant public HTTPS file hosting, redirect servers, and custom HTTP responses via `*.app.github.dev` |
+| **[cs-serve](user-guide/command-reference/cs-serve.md)** | Instant public HTTPS file hosting, redirect servers, custom HTTP responses, and data capture via `*.app.github.dev` |
 | **[cs-wg](user-guide/command-reference/cs-wg.md)** | Full WireGuard VPN tunnel with route management and traffic monitoring |
 | **[cs-tools](user-guide/command-reference/cs-tools.md)** | Drop-in wrappers for nmap, ffuf, httpx, nuclei, sqlmap with automatic SOCKS5 proxy arguments |
 
