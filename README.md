@@ -16,6 +16,17 @@
 </p>
 
 ---
+> [!WARNING]
+> This software is provided strictly for **educational, research, and authorized security testing purposes.** 
+>
+> **GitHub's Terms of Service** and **Acceptable Use Policies** explicitly prohibit certain uses of Codespaces, including:
+> 
+> - Using Codespaces to disrupt services, gain unauthorized access to networks/devices, or support attack infrastructure (see [GitHub Terms for Additional Products and Features - Codespaces section](https://docs.github.com/en/site-policy/github-terms/github-terms-for-additional-products-and-features#codespaces)).
+> - Placing disproportionate burden on GitHub's servers (e.g., excessive bandwidth, proxy/CDN-like usage).
+> - Any activity violating applicable laws, third-party rights, or GitHub's Acceptable Use Policies (e.g., unauthorized scanning, proxying for malicious purposes).
+> 
+> Misuse may result in suspension/termination of your GitHub account, Codespaces access restrictions, or other enforcement actions by GitHub.
+> The author is not liable for any harm or damage resulting from its unauthorized use.
 
 ## Documentation
 
