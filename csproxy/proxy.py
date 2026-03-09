@@ -244,15 +244,14 @@ def cmd_start(args, config: Config, gh: GitHubManager) -> int:
     num_proxies = min(config.get('num_proxies', 1), 2)
 
     if num_proxies > 1:
-        # Create N codespaces, use first one as proxy
         names = _ensure_codespaces(config, gh, num_proxies)
         codespace = names[0]
         config.set('codespace_name', codespace)
         config.set('codespace_names', names)
-        logger.info(f"Created {len(names)} codespace(s), proxying through: {codespace}")
+        logger.info(f"Created {len(names)} codespace(s)")
         for i, name in enumerate(names):
-            suffix = " (active tunnel)" if i == 0 else " (standby)"
-            logger.info(f"  {name}{suffix}")
+            port = config.socks_port + i
+            logger.info(f"  {name}  →  socks5://127.0.0.1:{port}")
     else:
         codespace = _get_codespace(config, gh)
         config.set('codespace_names', [codespace])
@@ -261,6 +260,14 @@ def cmd_start(args, config: Config, gh: GitHubManager) -> int:
     selector.ensure_running(codespace)
     tunnel = SSHTunnel(config, codespace)
     tunnel.start()
+
+    # Start a tunnel for each additional codespace on consecutive ports
+    for i, name in enumerate(config.codespace_names[1:], 1):
+        extra_port = config.socks_port + i
+        logger.info(f"Starting tunnel {i+1} on port {extra_port}: {name}")
+        selector.ensure_running(name)
+        extra_tunnel = SSHTunnel(config, name, port=extra_port, pid_suffix=str(i + 1))
+        extra_tunnel.start(start_timeout=90)
 
     ProxychainsConfig.generate(config)
     print_usage_examples(config)
@@ -273,6 +280,10 @@ def cmd_stop(args, config: Config, gh: GitHubManager) -> int:
     """Stop proxy tunnel."""
     tunnel = SSHTunnel(config, config.codespace_name or '')
     tunnel.stop()
+
+    # Stop tunnels for any additional codespaces
+    for i in range(1, len(config.codespace_names)):
+        SSHTunnel(config, '', port=config.socks_port + i, pid_suffix=str(i + 1)).stop()
 
     http = HTTPProxyManager(config)
     http.stop()
@@ -421,7 +432,8 @@ def _pick_codespace(args, config: Config, gh: GitHubManager) -> str:
     if len(names) > 1:
         print("\nSelect Codespace:")
         for i, name in enumerate(names, 1):
-            role = " [active]" if name == config.codespace_name else " [standby]"
+            idx = names.index(name)
+            role = f" [:{config.socks_port + idx}]"
             print(f"  {i}) {name}{role}")
         choice = input("> ").strip()
         if choice.isdigit():

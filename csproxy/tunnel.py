@@ -26,18 +26,26 @@ class SSHTunnel:
     using exponential backoff, mirroring the subshell loop in cs-proxy.sh.
     """
 
-    def __init__(self, config: Config, codespace_name: str):
+    def __init__(self, config: Config, codespace_name: str, *,
+                 port: Optional[int] = None,
+                 pid_suffix: str = ''):
         self.config = config
         self.codespace_name = codespace_name
+        self.port = port or config.socks_port
         self.logger = get_logger()
-        self.pid_file = config.config_dir / 'proxy.pid'
-        self.stop_file = config.config_dir / 'proxy.pid.stop'
-        self.log_file = config.config_dir / 'proxy.log'
+        self.pid_file = config.config_dir / f'proxy{pid_suffix}.pid'
+        self.stop_file = config.config_dir / f'proxy{pid_suffix}.pid.stop'
+        self.log_file = config.config_dir / f'proxy{pid_suffix}.log'
         self._process: Optional[subprocess.Popen] = None
 
-    def start(self) -> None:
+    def start(self, start_timeout: int = 30) -> None:
         """
         Start SSH tunnel with SOCKS5 forwarding and auto-reconnect.
+
+        Args:
+            start_timeout: Seconds to wait for the SOCKS5 listener to become healthy.
+                           Additional tunnels use 90s since gh may take longer to
+                           establish concurrent SSH relay sessions (default: 30).
 
         Raises:
             SSHTunnelError: If tunnel cannot be established
@@ -46,51 +54,63 @@ class SSHTunnel:
             self.logger.warning(f"Proxy already running (PID: {self._read_pid()})")
             return
 
-        self.logger.info(f"Starting SOCKS5 proxy on port {self.config.socks_port}...")
+        self.logger.info(f"Starting SOCKS5 proxy on port {self.port}...")
 
         if self.stop_file.exists():
             self.stop_file.unlink()
 
         ssh_args = [
             '--',
-            '-D', f'127.0.0.1:{self.config.socks_port}',
+            '-D', f'127.0.0.1:{self.port}',
             '-N',
             '-o', 'ServerAliveInterval=30',
             '-o', 'ServerAliveCountMax=3',
             '-o', 'ExitOnForwardFailure=yes',
+            # Disable ControlMaster so concurrent tunnels to different codespaces
+            # don't share the same relay socket (all codespaces use the same SSH
+            # relay hostname, e.g. vs-ssh.github.dev).  Without this, the second
+            # tunnel hangs waiting to multiplex over the first tunnel's socket.
+            '-o', 'ControlMaster=no',
+            '-o', 'ControlPath=none',
         ]
 
         gh_cmd = ['gh', 'codespace', 'ssh', '--codespace', self.codespace_name] + ssh_args
+
+        env = os.environ.copy()
 
         pid = os.fork() if hasattr(os, 'fork') else None
 
         if pid is not None:
             if pid == 0:
-                self._run_with_reconnect(gh_cmd)
+                self._run_with_reconnect(gh_cmd, env)
                 sys.exit(0)
             else:
                 self._write_pid(pid)
         else:
-            self._run_windows_background(gh_cmd)
+            self._run_windows_background(gh_cmd, env)
 
-        self.logger.info("Waiting for tunnel to establish...")
-        deadline = time.time() + 30
+        self.logger.info(f"Waiting for tunnel to establish (timeout: {start_timeout}s)...")
+        deadline = time.time() + start_timeout
+        attempt = 0
         while time.time() < deadline:
             time.sleep(3)
+            attempt += 1
             if not self.is_running():
                 raise SSHTunnelError("Tunnel process exited immediately - check logs")
+            self.logger.debug(f"Health check attempt {attempt} on port {self.port}...")
             if self.health_check():
                 break
         else:
             self.stop()
             raise SSHTunnelError(
-                f"Tunnel started but proxy is not responding on port {self.config.socks_port}"
+                f"Tunnel not responding on port {self.port} after {start_timeout}s "
+                f"— check logs: {self.log_file}"
             )
 
         self.logger.info("SOCKS5 proxy started successfully")
-        self.logger.info(f"  Local endpoint: socks5://127.0.0.1:{self.config.socks_port}")
+        self.logger.info(f"  Local endpoint: socks5://127.0.0.1:{self.port}")
 
-    def _run_with_reconnect(self, gh_cmd: list) -> None:
+    def _run_with_reconnect(self, gh_cmd: list, env: Optional[dict] = None) -> None:
         """Run SSH tunnel with exponential backoff reconnect."""
         delay = self.config.reconnect_delay
 
@@ -105,6 +125,7 @@ class SSHTunnel:
                     gh_cmd,
                     stdout=log_fd,
                     stderr=log_fd,
+                    env=env,
                 )
 
             if self.stop_file.exists():
@@ -121,12 +142,12 @@ class SSHTunnel:
             time.sleep(delay)
             delay = min(delay * 2, self.config.max_reconnect_delay)
 
-    def _run_windows_background(self, gh_cmd: list) -> None:
+    def _run_windows_background(self, gh_cmd: list, env: Optional[dict] = None) -> None:
         """Start tunnel in background thread on Windows (no fork available)."""
         import threading
 
         def run():
-            self._run_with_reconnect(gh_cmd)
+            self._run_with_reconnect(gh_cmd, env)
 
         thread = threading.Thread(target=run, daemon=True)
         thread.start()
@@ -153,7 +174,7 @@ class SSHTunnel:
 
         try:
             subprocess.run(
-                ['pkill', '-f', f'gh codespace ssh.*-D.*{self.config.socks_port}'],
+                ['pkill', '-f', f'gh codespace ssh.*-D.*{self.port}'],
                 capture_output=True
             )
         except FileNotFoundError:
@@ -179,7 +200,7 @@ class SSHTunnel:
             [
                 'curl', '-s',
                 '--connect-timeout', str(timeout),
-                '--socks5-hostname', f'127.0.0.1:{self.config.socks_port}',
+                '--socks5-hostname', f'127.0.0.1:{self.port}',
                 'https://ifconfig.me'
             ],
             capture_output=True,
@@ -193,7 +214,7 @@ class SSHTunnel:
             [
                 'curl', '-s',
                 '--connect-timeout', '5',
-                '--socks5-hostname', f'127.0.0.1:{self.config.socks_port}',
+                '--socks5-hostname', f'127.0.0.1:{self.port}',
                 'https://ifconfig.me'
             ],
             capture_output=True,

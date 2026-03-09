@@ -297,7 +297,6 @@ class Config:
         """Get all managed Codespace names."""
         return self._config.get('codespace_names', [])
 
-
 def create_example_config(config_file: Path) -> None:
     """
     Create an example configuration file with comments.

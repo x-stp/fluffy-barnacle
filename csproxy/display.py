@@ -98,14 +98,27 @@ def show_status(config: Config, gh) -> None:
     else:
         print("Proxy Status:    STOPPED")
 
+    all_names = config.codespace_names or ([config.codespace_name] if config.codespace_name else [])
+    num_tunnels = len(all_names)
+
     if proxy_running:
-        tunnel = SSHTunnel(config, config.codespace_name)
-        if tunnel.health_check():
-            exit_ip = tunnel.get_exit_ip()
-            print(f"Proxy Health:    HEALTHY")
-            print(f"Proxied IP:      {exit_ip or 'unknown'}")
+        if num_tunnels > 1:
+            print(f"\nTunnels:")
+            for i, name in enumerate(all_names):
+                port = config.socks_port + i
+                t = SSHTunnel(config, name, port=port, pid_suffix=('' if i == 0 else str(i + 1)))
+                healthy = t.health_check()
+                exit_ip = t.get_exit_ip() if healthy else 'unreachable'
+                health_str = "HEALTHY" if healthy else "UNHEALTHY"
+                print(f"  :{port}  {health_str:<10}  {exit_ip or 'unknown':<16}  {name}")
         else:
-            print(f"Proxy Health:    UNHEALTHY")
+            tunnel = SSHTunnel(config, config.codespace_name)
+            if tunnel.health_check():
+                exit_ip = tunnel.get_exit_ip()
+                print(f"Proxy Health:    HEALTHY")
+                print(f"Proxied IP:      {exit_ip or 'unknown'}")
+            else:
+                print(f"Proxy Health:    UNHEALTHY")
 
     print(f"SOCKS5 Port:     {config.socks_port}")
     print(f"HTTP Port:       {config.http_proxy_port}")
@@ -129,10 +142,9 @@ def show_status(config: Config, gh) -> None:
             name = cs.get('name', '')
             state = cs.get('state', 'unknown')
             location = cs.get('location', '')
-            if name == active:
-                role = " [active tunnel]"
-            elif name in managed:
-                role = " [standby]"
+            if name in managed:
+                idx = config.codespace_names.index(name) if name in config.codespace_names else -1
+                role = f" [tunnel :{config.socks_port + idx}]" if idx >= 0 else " [managed]"
             else:
                 role = ""
             loc_str = f"  {location}" if location else ""
@@ -205,7 +217,7 @@ COMMANDS:
 
 OPTIONS:
     -p, --port         SOCKS5 proxy port (default: 1080)
-    -n, --num-proxies  Number of codespaces to create (1-2, default: 1)
+    -n, --num-proxies  Number of codespaces/tunnels to create (1-2, default: 1)
     -c, --codespace    Codespace name to use
     -l, --location     Region for new Codespace: EastUs, WestUs2, WestEurope, SouthEastAsia
                        Repeat for multiple codespaces: -l WestEurope -l EastUs
@@ -215,8 +227,8 @@ EXAMPLES:
     # Quick start (auto-selects codespace)
     cs-proxy start
 
-    # Create 2 codespaces, proxy through the first
-    cs-proxy -n 2 start
+    # Create 2 codespaces with different exit IPs (ports 1080 and 1081)
+    cs-proxy -n 2 start -l WestEurope -l EastUs
 
     # Get a shell in the codespace
     cs-proxy ssh
