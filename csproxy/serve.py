@@ -201,7 +201,8 @@ def _setup_server_environment(gh: GitHubManager, cs_name: str, port: int) -> Non
     _ssh(gh, cs_name, "mkdir -p /tmp/serve")
 
 
-def _start_port_forwarding(gh: GitHubManager, cs_name: str, port: int) -> subprocess.Popen:
+def _start_port_forwarding(gh: GitHubManager, cs_name: str, port: int,
+                           set_public: bool = True) -> subprocess.Popen:
     """
     Start port forwarding from Codespace port to local port.
 
@@ -211,6 +212,9 @@ def _start_port_forwarding(gh: GitHubManager, cs_name: str, port: int) -> subpro
         gh: GitHub manager
         cs_name: Codespace name
         port: Port to forward
+        set_public: If True, also set port visibility to public. Skip on reconnect
+                    since the port is already public and re-running the command may
+                    disrupt the existing server binding.
 
     Returns:
         Popen instance for the background port forward process
@@ -226,11 +230,12 @@ def _start_port_forwarding(gh: GitHubManager, cs_name: str, port: int) -> subpro
     )
     time.sleep(2)
 
-    # Make port public
-    gh.run_gh_command(
-        ['codespace', 'ports', 'visibility', f'{port}:public', '--codespace', cs_name],
-        check=False
-    )
+    if set_public:
+        # Make port public
+        gh.run_gh_command(
+            ['codespace', 'ports', 'visibility', f'{port}:public', '--codespace', cs_name],
+            check=False
+        )
 
     return fwd_process
 
@@ -262,7 +267,7 @@ def _verify_server_running(gh: GitHubManager, cs_name: str, process_name: str) -
     logger.info("Server started successfully")
 
 
-def _tail_remote_logs(gh: GitHubManager, cs_name: str) -> None:
+def _tail_remote_logs(gh: GitHubManager, cs_name: str, new_only: bool = False) -> None:
     """
     Stream server logs from Codespace until Ctrl+C.
 
@@ -273,11 +278,14 @@ def _tail_remote_logs(gh: GitHubManager, cs_name: str) -> None:
     Args:
         gh: GitHub manager
         cs_name: Codespace name
+        new_only: If True, use tail -n 0 to skip existing log content and only
+                  stream new lines. Used on reconnect to avoid replaying stale
+                  messages (e.g. old 'Port busy' retries) from a previous session.
     """
+    tail_cmd = 'tail -n 0 -f /tmp/serve/server.log' if new_only else 'tail -f /tmp/serve/server.log'
     try:
         subprocess.run(
-            ['gh', 'codespace', 'ssh', '--codespace', cs_name,
-             '--', 'tail -f /tmp/serve/server.log']
+            ['gh', 'codespace', 'ssh', '--codespace', cs_name, '--', tail_cmd]
         )
     except KeyboardInterrupt:
         pass  # Normal exit
@@ -352,10 +360,33 @@ def _show_banner(title: str, cs_name: str, port: int, **info: str) -> None:
     print("Press Ctrl+C to stop serving\n")
 
 
+def _is_server_running(gh: GitHubManager, cs_name: str, script_name: str, port: int) -> bool:
+    """
+    Check if a server script is already running and bound to the given port.
+
+    Args:
+        gh: GitHub manager
+        cs_name: Codespace name
+        script_name: Remote script filename (e.g., 'capture_server.py')
+        port: Port to check
+
+    Returns:
+        True if the process is running and the port is bound
+    """
+    result = _ssh(
+        gh, cs_name,
+        f"pgrep -f '{script_name}' > /dev/null 2>&1 "
+        f"&& ss -tln 2>/dev/null | grep -q ':{port} ' "
+        f"&& echo RUNNING || true"
+    )
+    return b'RUNNING' in result.stdout
+
+
 def _launch_server(gh: GitHubManager, cs_name: str, port: int,
                    script: str, script_name: str,
                    banner_fn, domain: str = None,
-                   config: 'Config' = None) -> None:
+                   config: 'Config' = None,
+                   reconnect: bool = False) -> None:
     """
     Upload a server script, start it, forward the port, show banner, and tail logs.
 
@@ -364,6 +395,9 @@ def _launch_server(gh: GitHubManager, cs_name: str, port: int,
 
     If a domain is specified, deploys a Cloudflare Worker as a reverse proxy
     (auto-deploy with credentials, or generates the script for manual setup).
+
+    If reconnect=True, skips upload/start and only restores port forwarding and
+    tails logs — used when the server is already running from a previous session.
 
     Args:
         gh: GitHub manager
@@ -374,19 +408,23 @@ def _launch_server(gh: GitHubManager, cs_name: str, port: int,
         banner_fn: Callable(cs_name, port, domain=None) that prints the server info banner
         domain: Optional custom domain for Cloudflare Worker proxy
         config: Configuration (required if domain is set)
+        reconnect: If True, skip upload/start and just restore the connection
     """
     logger = get_logger()
 
-    _upload_script(gh, cs_name, f"{SERVE_DIR}/{script_name}", script)
+    if not reconnect:
+        _upload_script(gh, cs_name, f"{SERVE_DIR}/{script_name}", script)
 
-    logger.info(f"Starting server on port {port}...")
-    _ssh(gh, cs_name,
-         f"cd {SERVE_DIR}; nohup python3 {script_name} > server.log 2>&1 & sleep 1; exit 0")
-    time.sleep(1)
+        logger.info(f"Starting server on port {port}...")
+        _ssh(gh, cs_name,
+             f"cd {SERVE_DIR}; nohup python3 {script_name} > server.log 2>&1 & sleep 1; exit 0")
+        time.sleep(1)
 
-    _verify_server_running(gh, cs_name, script_name)
+        _verify_server_running(gh, cs_name, script_name)
+    else:
+        logger.info("Reconnecting to existing server...")
 
-    fwd = _start_port_forwarding(gh, cs_name, port)
+    fwd = _start_port_forwarding(gh, cs_name, port, set_public=not reconnect)
 
     # Deploy Cloudflare Worker if domain is specified
     cf_worker = None
@@ -398,11 +436,12 @@ def _launch_server(gh: GitHubManager, cs_name: str, port: int,
     banner_fn(cs_name, port, domain=domain)
 
     try:
-        _tail_remote_logs(gh, cs_name)
+        _tail_remote_logs(gh, cs_name, new_only=reconnect)
     finally:
         fwd.terminate()
         if cf_worker:
             cf_worker.teardown()
+        _ssh(gh, cs_name, f"pkill -9 -f '{script_name}' 2>/dev/null || true")
 
 
 # =============================================================================
@@ -605,8 +644,13 @@ def serve_capture(port: int, gh: GitHubManager, config: Config = None,
     logger.info(f"Using Codespace: {cs_name}")
     logger.info(f"Port: {port}")
 
-    _setup_server_environment(gh, cs_name, port)
-    _ssh(gh, cs_name, "mkdir -p /tmp/serve/captures")
+    reconnect = _is_server_running(gh, cs_name, 'capture_server.py', port)
+
+    if reconnect:
+        logger.info("Existing capture server detected — reconnecting...")
+    else:
+        _setup_server_environment(gh, cs_name, port)
+        _ssh(gh, cs_name, "mkdir -p /tmp/serve/captures")
 
     def banner(cs, p, domain=None):
         url = f"https://{cs}-{p}.app.github.dev/"
@@ -631,7 +675,8 @@ def serve_capture(port: int, gh: GitHubManager, config: Config = None,
     _launch_server(gh, cs_name, port,
                    script=_CAPTURE_SERVER_SCRIPT.format(PORT=port),
                    script_name="capture_server.py",
-                   banner_fn=banner, domain=domain, config=config)
+                   banner_fn=banner, domain=domain, config=config,
+                   reconnect=reconnect)
 
     _download_captures(gh, cs_name)
 
