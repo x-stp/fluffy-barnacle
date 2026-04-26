@@ -8,12 +8,14 @@ integration with common security tools.
 """
 
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
 from typing import Optional
 
 from .github import GitHubManager
+from .state import State
 from .utils import (
     Config,
     GitHubAuthError,
@@ -239,6 +241,18 @@ def cmd_start(args, config: Config, gh: GitHubManager) -> int:
     """Start SOCKS5 proxy tunnel."""
     logger = get_logger()
     check_dependencies(['gh', 'ssh', 'curl'])
+
+    if getattr(config, '_dry_run', False):
+        names = config.codespace_names or ([config.codespace_name] if config.codespace_name else [])
+        if not names:
+            print("[dry-run] No codespace configured. Would prompt for selection.")
+            return 0
+        for i, name in enumerate(names):
+            port = config.socks_port + i
+            print(f"[dry-run] Would start tunnel {name} on port {port}")
+        print("[dry-run] Would generate proxychains config and save settings")
+        return 0
+
     gh.check_auth()
 
     num_proxies = min(config.get('num_proxies', 1), 2)
@@ -283,8 +297,15 @@ def cmd_start(args, config: Config, gh: GitHubManager) -> int:
         port = config.socks_port + i
         t = SSHTunnel(config, name, port=port, pid_suffix=suffix)
         if not t.is_running():
+            if getattr(config, '_dry_run', False):
+                print(f"[dry-run] Would start tunnel {name} on port {port}")
+                continue
             selector.ensure_running(name)
             t.start(start_timeout=30 if i == 0 else 90)
+
+    if getattr(config, '_dry_run', False):
+        print("[dry-run] Would generate proxychains config and save settings")
+        return 0
 
     ProxychainsConfig.generate(config)
     print_usage_examples(config)
@@ -295,6 +316,13 @@ def cmd_start(args, config: Config, gh: GitHubManager) -> int:
 
 def cmd_stop(args, config: Config, gh: GitHubManager) -> int:
     """Stop proxy tunnel."""
+    if getattr(config, '_dry_run', False):
+        print(f"[dry-run] Would stop tunnel for {config.codespace_name or 'active codespace'}")
+        for i in range(1, len(config.codespace_names)):
+            print(f"[dry-run] Would stop tunnel on port {config.socks_port + i}")
+        print("[dry-run] Would stop HTTP proxy")
+        return 0
+
     tunnel = SSHTunnel(config, config.codespace_name or '')
     tunnel.stop()
 
@@ -315,7 +343,11 @@ def cmd_restart(args, config: Config, gh: GitHubManager) -> int:
 
 
 def cmd_status(args, config: Config, gh: GitHubManager) -> int:
-    """Show proxy status."""
+    """Show proxy status. Pass --watch or -w for auto-refresh."""
+    if args and ('--watch' in args or '-w' in args):
+        from .display import watch_status
+        watch_status(config, gh)
+        return 0
     show_status(config, gh)
     return 0
 
@@ -516,8 +548,21 @@ def cmd_teardown(args, config: Config, gh: GitHubManager) -> int:
     check_dependencies(['gh'])
     gh.check_auth()
 
-    tunnel = SSHTunnel(config, config.codespace_name or '')
-    tunnel.stop()
+    # Clean up every tunnel in state, not just config-tracked ones
+    state = State(config.config_dir)
+    tunnels = state.get_tunnels(kind='ssh')
+    for t in tunnels:
+        port = t.get('port', config.socks_port)
+        cs_name = t.get('codespace_name', '')
+        tunnel = SSHTunnel(config, cs_name, port=port)
+        tunnel.cleanup()
+        logger.info(f"Stopped tunnel :{port}")
+
+    # Also clean up any orphaned artifacts in workers/ directory
+    workers_dir = config.config_dir / 'workers'
+    if workers_dir.exists():
+        for f in workers_dir.iterdir():
+            f.unlink(missing_ok=True)
 
     all_names = config.codespace_names or ([config.codespace_name] if config.codespace_name else [])
     if all_names:
@@ -530,6 +575,66 @@ def cmd_teardown(args, config: Config, gh: GitHubManager) -> int:
     else:
         logger.warning("No Codespace configured. Use: gh codespace stop -c <name>")
 
+    return 0
+
+
+def cmd_down(args, config: Config, gh: GitHubManager) -> int:
+    """Stop proxy and permanently delete all managed Codespaces."""
+    logger = get_logger()
+    check_dependencies(['gh'])
+    gh.check_auth()
+
+    # Step 1: aggressive cleanup of every tunnel in state
+    state = State(config.config_dir)
+    tunnels = state.get_tunnels(kind='ssh')
+    for t in tunnels:
+        port = t.get('port', config.socks_port)
+        cs_name = t.get('codespace_name', '')
+        tunnel = SSHTunnel(config, cs_name, port=port)
+        tunnel.cleanup()
+        logger.info(f"Cleaned up tunnel :{port}")
+
+    # Also clean up any orphaned artifacts in workers/ directory
+    workers_dir = config.config_dir / 'workers'
+    if workers_dir.exists():
+        for f in workers_dir.iterdir():
+            f.unlink(missing_ok=True)
+
+    all_names = list(config.codespace_names) or ([config.codespace_name] if config.codespace_name else [])
+    if not all_names:
+        logger.warning("No Codespace configured.")
+        return 0
+
+    # Step 2: stop codespaces first (clean shutdown before delete)
+    for name in all_names:
+        logger.info(f"Stopping Codespace: {name}")
+        gh.run_gh_command(
+            ['codespace', 'stop', '--codespace', name], check=False
+        )
+
+    # Step 3: confirm deletion
+    if len(all_names) > 1:
+        print(f"\nThis will PERMANENTLY delete {len(all_names)} managed codespaces:")
+        for name in all_names:
+            print(f"  - {name}")
+    else:
+        print(f"\nThis will PERMANENTLY delete: {all_names[0]}")
+    confirm = input("Are you sure? [y/N] ").strip().lower()
+    if confirm != 'y':
+        logger.info("Cancelled — codespaces were stopped but not deleted.")
+        return 0
+
+    # Step 4: delete
+    for name in all_names:
+        logger.info(f"Deleting Codespace: {name}")
+        gh.delete_codespace(name, force=True)
+
+    # Step 5: wipe local state and config tracking
+    state.clear_all()
+    config.set('codespace_name', '')
+    config.set('codespace_names', [])
+    config.save()
+    logger.info(f"Deleted {len(all_names)} codespace(s)")
     return 0
 
 
@@ -634,6 +739,134 @@ alias cs-wg='sudo env "PATH=$PATH" cs-wg'
     return 0
 
 
+def cmd_pac(args, config: Config, gh: GitHubManager) -> int:
+    """Generate Proxy Auto-Config (PAC) file contents."""
+    pac = f"""function FindProxyForURL(url, host) {{
+    if (isPlainHostName(host) ||
+        shExpMatch(host, "*.local") ||
+        isInNet(host, "127.0.0.0", "255.0.0.0") ||
+        isInNet(host, "10.0.0.0", "255.0.0.0") ||
+        isInNet(host, "172.16.0.0", "255.240.0.0") ||
+        isInNet(host, "192.168.0.0", "255.255.0.0")) {{
+        return "DIRECT";
+    }}
+    return "SOCKS5 127.0.0.1:{config.socks_port}; DIRECT";
+}}"""
+    print(pac)
+    return 0
+
+
+def cmd_completion(args, config: Config, gh: GitHubManager) -> int:
+    """Generate shell completion script."""
+    shell = args[0] if args else 'bash'
+    from .completion import generate_completion
+    script = generate_completion(shell)
+    if "Unsupported shell" in script:
+        get_logger().error(f"Unsupported shell: {shell}. Supported: bash, zsh")
+        return 1
+    print(script)
+    return 0
+
+
+def cmd_check(args, config: Config, gh: GitHubManager) -> int:
+    """Run diagnostics and report configuration/dependency health."""
+    logger = get_logger()
+    issues = 0
+    checks = []
+
+    def _ok(msg: str) -> None:
+        checks.append(("PASS", msg))
+
+    def _fail(msg: str) -> None:
+        nonlocal issues
+        issues += 1
+        checks.append(("FAIL", msg))
+
+    # 1. GitHub CLI
+    if shutil.which('gh'):
+        _ok("gh CLI is installed")
+        result = subprocess.run(['gh', 'auth', 'status'], capture_output=True, text=True)
+        if result.returncode == 0:
+            _ok("gh CLI is authenticated")
+        else:
+            _fail("gh CLI is not authenticated (run: gh auth login)")
+    else:
+        _fail("gh CLI is not installed")
+
+    # 2. SSH
+    if shutil.which('ssh'):
+        _ok("ssh is installed")
+    else:
+        _fail("ssh is not installed")
+
+    # 3. curl
+    if shutil.which('curl'):
+        _ok("curl is installed")
+    else:
+        _fail("curl is not installed")
+
+    # 4. proxychains4
+    if shutil.which('proxychains4'):
+        _ok("proxychains4 is installed")
+    else:
+        _fail("proxychains4 is not installed (optional: apt install proxychains-ng)")
+
+    # 5. Config directory / file
+    if config.config_dir.exists():
+        _ok(f"Config directory exists: {config.config_dir}")
+    else:
+        _fail(f"Config directory missing: {config.config_dir}")
+
+    if config.config_file.exists():
+        _ok(f"Config file exists: {config.config_file}")
+    else:
+        _fail(f"Config file missing: {config.config_file}")
+
+    # 6. SSH key
+    key_file = config.config_dir / 'codespace_key'
+    if key_file.exists():
+        _ok(f"SSH key exists: {key_file}")
+    else:
+        _fail(f"SSH key missing: {key_file} (run: cs-proxy keygen)")
+
+    # 7. Port conflicts
+    import socket
+    for port, label in [(config.socks_port, 'SOCKS5'), (config.http_proxy_port, 'HTTP')]:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind(('127.0.0.1', port))
+                _ok(f"{label} port {port} is available")
+            except OSError:
+                _fail(f"{label} port {port} is already in use")
+
+    # 8. State file health
+    from .state import State
+    try:
+        state = State(config.config_dir)
+        state_data = state.load()
+        tunnels = state_data.get('tunnels', [])
+        if tunnels:
+            _ok(f"State file has {len(tunnels)} tunnel(s)")
+        else:
+            _ok("State file is healthy (no tunnels)")
+    except Exception as e:
+        _fail(f"State file error: {e}")
+
+    # Report
+    print("\n=== cs-proxy Check ===\n")
+    for status, msg in checks:
+        icon = "✓" if status == "PASS" else "✗"
+        print(f"  {icon}  {msg}")
+    print()
+    if issues == 0:
+        print("All checks passed.")
+        return 0
+    else:
+        print(f"{issues} issue(s) found. Run with --verbose for details.")
+        return 1
+
+
 def cmd_help(args, config: Config, gh: GitHubManager) -> int:
     """Show help."""
     show_help()
@@ -665,10 +898,13 @@ COMMANDS = {
     'run':          cmd_run,
     'name':         cmd_name,
     'teardown':     cmd_teardown,
-    'down':         cmd_teardown,   # Alias
+    'down':         cmd_down,
     'delete':       cmd_delete,
     'rm':           cmd_delete,     # Alias
     'token':        cmd_token,
     'aliases':      cmd_aliases,
+    'pac':          cmd_pac,
+    'completion':   cmd_completion,
+    'check':        cmd_check,
     'help':         cmd_help,
 }

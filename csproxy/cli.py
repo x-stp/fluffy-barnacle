@@ -39,6 +39,8 @@ def main_proxy(argv=None):
                         help='Region for new Codespace: EastUs, WestUs2, WestEurope, SouthEastAsia'
                              ' (repeat for multiple: -l WestEurope -l EastUs)')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Show what would happen without making changes')
     parser.add_argument('-h', '--help', action='store_true', help='Show help and exit')
     parser.add_argument('command', nargs='?', default='help', help='Command to run')
     parser.add_argument('command_args', nargs='*', help='Command arguments')
@@ -55,6 +57,18 @@ def main_proxy(argv=None):
     config = Config()
     config.ensure_dirs()
 
+    # Reconcile state: detect crashed tunnels from previous runs
+    from .state import State
+    try:
+        state = State(config.config_dir)
+        crashed = state.reconcile()
+        if crashed:
+            logger.warning(f"Detected {len(crashed)} crashed tunnel(s): "
+                           + ", ".join(str(t['port']) for t in crashed))
+    except TimeoutError as e:
+        logger.error(f"State file is locked by another process: {e}")
+        return 1
+
     if parsed.port:
         config.set('socks_port', parsed.port)
     config.set('num_proxies', parsed.num_proxies)
@@ -64,6 +78,8 @@ def main_proxy(argv=None):
         config.set('locations', parsed.locations)
     if parsed.verbose:
         config.set('verbose', True)
+
+    config._dry_run = parsed.dry_run
 
     gh = GitHubManager(config_dir=config.config_dir)
 
