@@ -40,7 +40,7 @@ def test_proxy_module_exports():
         'set', 'http', 'proxychains', 'env', 'burp', 'keygen',
         'config', 'logs', 'split', 'ssh', 'run', 'name',
         'teardown', 'down', 'delete', 'rm', 'token', 'aliases',
-        'pac', 'completion', 'check', 'help',
+        'pac', 'completion', 'check', 'chain', 'help',
     }
     assert expected_commands <= set(COMMANDS.keys())
 

@@ -91,6 +91,45 @@ Checks:
 
 Returns exit code `0` if all checks pass, `1` if any issues are found.
 
+### Two-Hop Chains
+
+#### `chain create`
+
+Create a two-hop Codespaces chain definition.
+
+```bash
+cs-proxy chain create eu-us --hop WestEurope --hop EastUs
+```
+
+#### `chain start`
+
+Start the chain and expose a local SOCKS endpoint.
+
+```bash
+cs-proxy chain start eu-us --port 1080
+```
+
+Traffic flows from the local SOCKS port to the first Codespace, then through an HTTPS CONNECT relay to the second Codespace, which opens the final outbound connection.
+
+#### `chain status`
+
+Show running chain state.
+
+```bash
+cs-proxy chain status
+cs-proxy chain status eu-us
+```
+
+#### `chain stop`
+
+Stop local forwarding and remote chain relay processes.
+
+```bash
+cs-proxy chain stop eu-us
+```
+
+Chain mode is experimental and intentionally capped at two hops.
+
 ### HTTP Proxy
 
 #### `http`

@@ -16,6 +16,7 @@ from typing import Optional
 
 from .github import GitHubManager
 from .state import State
+from .chains import cmd_chain
 from .utils import (
     Config,
     GitHubAuthError,
@@ -906,5 +907,6 @@ COMMANDS = {
     'pac':          cmd_pac,
     'completion':   cmd_completion,
     'check':        cmd_check,
+    'chain':        cmd_chain,
     'help':         cmd_help,
 }
