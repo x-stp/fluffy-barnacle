@@ -60,3 +60,15 @@ def test_chain_start_dry_run_does_not_call_github(tmp_path):
 
     assert result == 0
     check_auth.assert_not_called()
+
+
+def test_wait_local_forward_fails_if_process_exits():
+    import pytest
+    from csproxy.chains import _wait_local_forward
+
+    class DeadProcess:
+        def poll(self):
+            return 1
+
+    with pytest.raises(RuntimeError, match="exited before becoming ready"):
+        _wait_local_forward(19080, DeadProcess(), "chain SOCKS", timeout=1)

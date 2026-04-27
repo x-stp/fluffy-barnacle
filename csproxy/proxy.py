@@ -923,6 +923,76 @@ def cmd_check(args, config: Config, gh: GitHubManager) -> int:
         return 1
 
 
+def cmd_doctor(args, config: Config, gh: GitHubManager) -> int:
+    """Run diagnostics, optionally repairing local state/config artifacts."""
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="cs-proxy doctor")
+    parser.add_argument("--fix", action="store_true", help="Repair safe local issues")
+    parsed = parser.parse_args(args)
+
+    logger = get_logger()
+    if parsed.fix:
+        config.ensure_dirs()
+        state = State(config.config_dir)
+        crashed = state.reconcile()
+        if crashed:
+            logger.info(f"Reconciled {len(crashed)} crashed tunnel(s)")
+        ProxychainsConfig.generate(config)
+        if not config.config_file.exists():
+            config.save()
+        logger.info("Safe local repairs complete")
+
+    return cmd_check([], config, gh)
+
+
+def cmd_pool(args, config: Config, gh: GitHubManager) -> int:
+    """Inspect and manage the local tunnel pool."""
+    import argparse
+    import random
+
+    parser = argparse.ArgumentParser(prog="cs-proxy pool")
+    sub = parser.add_subparsers(dest="action", required=True)
+    sub.add_parser("list", help="List managed SSH tunnels")
+    sub.add_parser("rotate", help="Print a healthy tunnel port")
+    p_drain = sub.add_parser("drain", help="Mark a tunnel as draining")
+    p_drain.add_argument("port", type=int)
+
+    parsed = parser.parse_args(args)
+    state = State(config.config_dir)
+
+    if parsed.action == "list":
+        tunnels = state.get_tunnels(kind="ssh")
+        if not tunnels:
+            print("No SSH tunnels in the pool.")
+            return 0
+        for t in tunnels:
+            print(
+                f":{t.get('port')} {t.get('status', 'unknown'):<10} "
+                f"{t.get('codespace_name', '')}"
+            )
+        return 0
+
+    if parsed.action == "rotate":
+        healthy = state.get_tunnels(kind="ssh", status="healthy")
+        if not healthy:
+            get_logger().error("No healthy tunnels available")
+            return 1
+        print(random.choice(healthy)["port"])
+        return 0
+
+    if parsed.action == "drain":
+        tunnel = state.get_tunnel_by_port(parsed.port)
+        if not tunnel:
+            get_logger().error(f"No tunnel on port {parsed.port}")
+            return 1
+        state.update_tunnel(parsed.port, status="draining")
+        get_logger().info(f"Marked tunnel :{parsed.port} as draining")
+        return 0
+
+    return 1
+
+
 def cmd_help(args, config: Config, gh: GitHubManager) -> int:
     """Show help."""
     show_help()
@@ -963,6 +1033,8 @@ COMMANDS = {
     'completion':   cmd_completion,
     'account':      cmd_account,
     'check':        cmd_check,
+    'doctor':       cmd_doctor,
+    'pool':         cmd_pool,
     'chain':        cmd_chain,
     'help':         cmd_help,
 }
