@@ -769,6 +769,61 @@ def cmd_completion(args, config: Config, gh: GitHubManager) -> int:
     return 0
 
 
+def cmd_account(args, config: Config, gh: GitHubManager) -> int:
+    """Manage named GitHub accounts for account-aware workflows."""
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="cs-proxy account")
+    sub = parser.add_subparsers(dest="action", required=True)
+
+    p_add = sub.add_parser("add", help="Add or update an account")
+    p_add.add_argument("name")
+    p_add.add_argument("--token-env", required=True, help="Environment variable that holds the PAT")
+    p_add.add_argument("--gh-host", default="github.com")
+
+    p_list = sub.add_parser("list", help="List configured accounts")
+    p_list.set_defaults(_list=True)
+
+    p_rm = sub.add_parser("remove", aliases=["rm"], help="Remove an account")
+    p_rm.add_argument("name")
+
+    parsed = parser.parse_args(args)
+    accounts = config.get("accounts", {})
+    if not isinstance(accounts, dict):
+        accounts = {}
+
+    if parsed.action == "add":
+        if parsed.token_env.startswith("ghp_") or parsed.token_env.startswith("github_pat_"):
+            raise ValueError("Do not pass raw tokens. Use --token-env NAME instead.")
+        accounts[parsed.name] = {
+            "token_env": parsed.token_env,
+            "gh_host": parsed.gh_host,
+        }
+        config.set("accounts", accounts)
+        config.save()
+        get_logger().info(f"Saved account '{parsed.name}' using ${parsed.token_env}")
+        return 0
+
+    if parsed.action == "list":
+        if not accounts:
+            print("No named accounts configured.")
+            return 0
+        for name, account in accounts.items():
+            token_env = account.get("token_env", "")
+            gh_host = account.get("gh_host", "github.com")
+            print(f"{name:<20} token_env={token_env:<20} host={gh_host}")
+        return 0
+
+    if parsed.action in ("remove", "rm"):
+        accounts.pop(parsed.name, None)
+        config.set("accounts", accounts)
+        config.save()
+        get_logger().info(f"Removed account '{parsed.name}'")
+        return 0
+
+    return 1
+
+
 def cmd_check(args, config: Config, gh: GitHubManager) -> int:
     """Run diagnostics and report configuration/dependency health."""
     logger = get_logger()
@@ -906,6 +961,7 @@ COMMANDS = {
     'aliases':      cmd_aliases,
     'pac':          cmd_pac,
     'completion':   cmd_completion,
+    'account':      cmd_account,
     'check':        cmd_check,
     'chain':        cmd_chain,
     'help':         cmd_help,

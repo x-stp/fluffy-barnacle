@@ -39,7 +39,7 @@ def test_proxy_module_exports():
         'start', 'stop', 'restart', 'status', 'list', 'create',
         'set', 'http', 'proxychains', 'env', 'burp', 'keygen',
         'config', 'logs', 'split', 'ssh', 'run', 'name',
-        'teardown', 'down', 'delete', 'rm', 'token', 'aliases',
+        'teardown', 'down', 'delete', 'rm', 'token', 'aliases', 'account',
         'pac', 'completion', 'check', 'chain', 'help',
     }
     assert expected_commands <= set(COMMANDS.keys())

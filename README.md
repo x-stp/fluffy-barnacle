@@ -116,6 +116,18 @@ cs-proxy chain stop eu-us
 
 The first hop runs a SOCKS relay and the second hop runs an HTTPS CONNECT exit relay. Chain mode is intended for authorized testing of region-specific routing behavior and adds latency.
 
+Named accounts can be used when each hop should be managed with a different PAT:
+
+```bash
+export GH_TOKEN_EU=...
+export GH_TOKEN_US=...
+cs-proxy account add eu --token-env GH_TOKEN_EU
+cs-proxy account add us --token-env GH_TOKEN_US
+cs-proxy chain create eu-us --hop eu:WestEurope --hop us:EastUs
+```
+
+Raw PATs are intentionally not accepted as command arguments.
+
 ### Public File Hosting
 
 ```bash

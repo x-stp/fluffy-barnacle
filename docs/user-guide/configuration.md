@@ -108,8 +108,9 @@ All settings can be overridden via environment variables:
 
 ### Named Accounts
 
-Named accounts let advanced workflows target different GitHub identities without
-putting PATs in config files or command history:
+Named accounts let advanced workflows, including multi-account chains, target
+different GitHub identities without putting PATs in config files or command
+history:
 
 ```yaml
 accounts:
