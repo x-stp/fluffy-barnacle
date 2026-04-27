@@ -64,7 +64,7 @@ def main_proxy(argv=None):
         crashed = state.reconcile()
         if crashed:
             logger.warning(f"Detected {len(crashed)} crashed tunnel(s): "
-                           + ", ".join(str(t['port']) for t in crashed))
+                           + ", ".join(str(t.get('port', t.get('local_port', t.get('id', '?')))) for t in crashed))
     except TimeoutError as e:
         logger.error(f"State file is locked by another process: {e}")
         return 1

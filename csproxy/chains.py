@@ -3,7 +3,7 @@
 Two-hop Codespaces chain management.
 
 The chain data plane is:
-  local SOCKS -> Codespace hop 1 -> HTTPS CONNECT relay -> Codespace hop 2 -> target
+  local SOCKS -> Codespace hop 1 -> WebSocket relay -> Codespace hop 2 -> target
 """
 
 from __future__ import annotations
@@ -29,52 +29,120 @@ DEFAULT_HOP2_PORT = 18081
 
 
 EXIT_RELAY_SCRIPT = r"""#!/usr/bin/env python3
+import base64
+import hashlib
 import select
 import socket
 import socketserver
+import struct
 from http.server import BaseHTTPRequestHandler
 
 PORT = $PORT
 
 
-class ConnectHandler(BaseHTTPRequestHandler):
+def _recvall(sock, n):
+    data = b""
+    while len(data) < n:
+        chunk = sock.recv(n - len(data))
+        if not chunk:
+            raise OSError("socket closed")
+        data += chunk
+    return data
+
+
+def read_frame(sock):
+    first = _recvall(sock, 2)
+    opcode = first[0] & 0x0F
+    masked = bool(first[1] & 0x80)
+    length = first[1] & 0x7F
+    if length == 126:
+        length = struct.unpack("!H", _recvall(sock, 2))[0]
+    elif length == 127:
+        length = struct.unpack("!Q", _recvall(sock, 8))[0]
+    mask = _recvall(sock, 4) if masked else b""
+    payload = _recvall(sock, length) if length else b""
+    if masked:
+        payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    return opcode, payload
+
+
+def send_frame(sock, payload, opcode=2):
+    header = bytearray([0x80 | opcode])
+    length = len(payload)
+    if length < 126:
+        header.append(length)
+    elif length < 65536:
+        header.append(126)
+        header.extend(struct.pack("!H", length))
+    else:
+        header.append(127)
+        header.extend(struct.pack("!Q", length))
+    sock.sendall(header + payload)
+
+
+class WebSocketConnectHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):
         print("[exit] " + fmt % args, flush=True)
 
-    def do_CONNECT(self):
+    def do_GET(self):
+        if self.headers.get("Upgrade", "").lower() != "websocket":
+            self.send_error(426, "WebSocket upgrade required")
+            return
+        key = self.headers.get("Sec-WebSocket-Key", "")
+        accept = base64.b64encode(
+            hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()
+        ).decode()
+        self.connection.sendall(
+            (
+                "HTTP/1.1 101 Switching Protocols\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                f"Sec-WebSocket-Accept: {accept}\r\n\r\n"
+            ).encode()
+        )
+
         try:
-            host, port_s = self.path.rsplit(":", 1)
+            opcode, target = read_frame(self.connection)
+            if opcode == 8:
+                return
+            host, port_s = target.decode().rsplit(":", 1)
             upstream = socket.create_connection((host, int(port_s)), timeout=15)
         except Exception as exc:
-            self.send_error(502, str(exc))
+            print(f"[exit] connect failed: {exc}", flush=True)
+            try:
+                send_frame(self.connection, str(exc).encode(), opcode=8)
+            except OSError:
+                pass
             return
 
-        self.send_response(200, "Connection Established")
-        self.end_headers()
         self._pump(self.connection, upstream)
 
-    def _pump(self, left, right):
-        sockets = [left, right]
-        for sock in sockets:
-            sock.setblocking(False)
+    def _pump(self, ws_sock, upstream):
+        sockets = [ws_sock, upstream]
+        upstream.setblocking(False)
         while True:
             readable, _, errored = select.select(sockets, [], sockets, 60)
             if errored or not readable:
                 break
             for sock in readable:
-                try:
-                    data = sock.recv(65536)
-                except OSError:
-                    return
-                if not data:
-                    return
-                peer = right if sock is left else left
-                try:
-                    peer.sendall(data)
-                except OSError:
-                    return
+                if sock is ws_sock:
+                    try:
+                        opcode, data = read_frame(ws_sock)
+                    except OSError:
+                        return
+                    if opcode == 8 or not data:
+                        return
+                    upstream.sendall(data)
+                else:
+                    try:
+                        data = upstream.recv(65536)
+                    except OSError:
+                        return
+                    if not data:
+                        return
+                    send_frame(ws_sock, data)
 
 
 class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -83,21 +151,92 @@ class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 
 if __name__ == "__main__":
-    with Server(("0.0.0.0", PORT), ConnectHandler) as server:
-        print(f"exit relay listening on {PORT}", flush=True)
+    with Server(("0.0.0.0", PORT), WebSocketConnectHandler) as server:
+        print(f"websocket exit relay listening on {PORT}", flush=True)
         server.serve_forever()
 """
 
 
 SOCKS_RELAY_SCRIPT = r"""#!/usr/bin/env python3
-import http.client
+import base64
+import os
 import select
 import socket
 import socketserver
+import ssl
 import struct
 
 PORT = $PORT
 EXIT_HOST = "$EXIT_HOST"
+
+
+def _recvall(sock, n):
+    data = b""
+    while len(data) < n:
+        chunk = sock.recv(n - len(data))
+        if not chunk:
+            raise OSError("socket closed")
+        data += chunk
+    return data
+
+
+def read_frame(sock):
+    first = _recvall(sock, 2)
+    opcode = first[0] & 0x0F
+    masked = bool(first[1] & 0x80)
+    length = first[1] & 0x7F
+    if length == 126:
+        length = struct.unpack("!H", _recvall(sock, 2))[0]
+    elif length == 127:
+        length = struct.unpack("!Q", _recvall(sock, 8))[0]
+    mask = _recvall(sock, 4) if masked else b""
+    payload = _recvall(sock, length) if length else b""
+    if masked:
+        payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    return opcode, payload
+
+
+def send_frame(sock, payload, opcode=2, mask=True):
+    header = bytearray([0x80 | opcode])
+    length = len(payload)
+    mask_bit = 0x80 if mask else 0
+    if length < 126:
+        header.append(mask_bit | length)
+    elif length < 65536:
+        header.append(mask_bit | 126)
+        header.extend(struct.pack("!H", length))
+    else:
+        header.append(mask_bit | 127)
+        header.extend(struct.pack("!Q", length))
+    if mask:
+        key = os.urandom(4)
+        header.extend(key)
+        payload = bytes(b ^ key[i % 4] for i, b in enumerate(payload))
+    sock.sendall(header + payload)
+
+
+def open_exit_socket(target_host, target_port):
+    raw = socket.create_connection((EXIT_HOST, 443), timeout=20)
+    ws = ssl.create_default_context().wrap_socket(raw, server_hostname=EXIT_HOST)
+    key = base64.b64encode(os.urandom(16)).decode()
+    req = (
+        "GET / HTTP/1.1\r\n"
+        f"Host: {EXIT_HOST}\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {key}\r\n"
+        "Sec-WebSocket-Version: 13\r\n\r\n"
+    )
+    ws.sendall(req.encode())
+    response = b""
+    while b"\r\n\r\n" not in response:
+        response += ws.recv(4096)
+        if len(response) > 65536:
+            raise OSError("oversized websocket response")
+    if b" 101 " not in response.split(b"\r\n", 1)[0]:
+        raise OSError(response.split(b"\r\n", 1)[0].decode(errors="replace"))
+    send_frame(ws, f"{target_host}:{target_port}".encode())
+    return ws
 
 
 class SocksHandler(socketserver.BaseRequestHandler):
@@ -125,10 +264,7 @@ class SocksHandler(socketserver.BaseRequestHandler):
                 return
             target_port = struct.unpack("!H", client.recv(2))[0]
 
-            conn = http.client.HTTPSConnection(EXIT_HOST, timeout=20)
-            conn.set_tunnel(target_host, target_port)
-            conn.connect()
-            upstream = conn.sock
+            upstream = open_exit_socket(target_host, target_port)
 
             client.sendall(b"\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00")
             self._pump(client, upstream)
@@ -139,26 +275,30 @@ class SocksHandler(socketserver.BaseRequestHandler):
             except OSError:
                 pass
 
-    def _pump(self, left, right):
-        sockets = [left, right]
-        for sock in sockets:
-            sock.setblocking(False)
+    def _pump(self, client, ws_sock):
+        sockets = [client, ws_sock]
+        client.setblocking(False)
         while True:
             readable, _, errored = select.select(sockets, [], sockets, 60)
             if errored or not readable:
                 break
             for sock in readable:
-                try:
-                    data = sock.recv(65536)
-                except OSError:
-                    return
-                if not data:
-                    return
-                peer = right if sock is left else left
-                try:
-                    peer.sendall(data)
-                except OSError:
-                    return
+                if sock is client:
+                    try:
+                        data = client.recv(65536)
+                    except OSError:
+                        return
+                    if not data:
+                        return
+                    send_frame(ws_sock, data)
+                else:
+                    try:
+                        opcode, data = read_frame(ws_sock)
+                    except OSError:
+                        return
+                    if opcode == 8 or not data:
+                        return
+                    client.sendall(data)
 
 
 class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -168,7 +308,7 @@ class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 if __name__ == "__main__":
     with Server(("0.0.0.0", PORT), SocksHandler) as server:
-        print(f"socks relay listening on {PORT}, exit={EXIT_HOST}", flush=True)
+        print(f"socks relay listening on {PORT}, websocket exit={EXIT_HOST}", flush=True)
         server.serve_forever()
 """
 
@@ -212,12 +352,18 @@ def _popen_env_for_gh(gh: GitHubManager) -> Optional[dict]:
     return env
 
 
+def _runner_env_for_gh(gh: GitHubManager) -> Optional[dict]:
+    token = gh.load_token()
+    return {"GH_TOKEN": token} if token else None
+
+
 def _ssh(gh: GitHubManager, codespace: str, command: str, *, timeout: int = 30) -> subprocess.CompletedProcess:
     return gh.runner.run(
         ["gh", "codespace", "ssh", "--codespace", codespace, "--", command],
         capture_output=True,
         text=True,
         timeout=timeout,
+        env=_runner_env_for_gh(gh),
     )
 
 
@@ -236,6 +382,7 @@ def _upload(gh: GitHubManager, codespace: str, remote_path: str, content: str) -
         capture_output=True,
         text=True,
         timeout=30,
+        env=_runner_env_for_gh(gh),
     )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or f"Failed to upload {remote_path}")
@@ -243,7 +390,7 @@ def _upload(gh: GitHubManager, codespace: str, remote_path: str, content: str) -
 
 def _start_remote_script(gh: GitHubManager, codespace: str, script_path: str, label: str) -> None:
     quoted = shlex.quote(script_path)
-    cmd = f"pkill -f {shlex.quote(label)} 2>/dev/null || true; nohup python3 {quoted} > {quoted}.log 2>&1 &"
+    cmd = f"nohup python3 {quoted} > {quoted}.log 2>&1 &"
     result = _ssh(gh, codespace, cmd, timeout=30)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or f"Failed to start {script_path}")
@@ -354,6 +501,22 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
 
         _upload(hop2_gh, hop2_name, exit_path, exit_script)
         _start_remote_script(hop2_gh, hop2_name, exit_path, f"csproxy_chain_exit_{hop2_port}")
+        exit_fwd = subprocess.Popen(
+            [
+                "gh",
+                "codespace",
+                "ports",
+                "forward",
+                f"{hop2_port}:{hop2_port}",
+                "--codespace",
+                hop2_name,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            env=_popen_env_for_gh(hop2_gh),
+        )
+        time.sleep(2)
         hop2_gh.run_gh_command(
             ["codespace", "ports", "visibility", f"{hop2_port}:public", "--codespace", hop2_name],
             check=False,
@@ -368,7 +531,7 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
                 "codespace",
                 "ports",
                 "forward",
-                f"{local_port}:{hop1_port}",
+                f"{hop1_port}:{local_port}",
                 "--codespace",
                 hop1_name,
             ],
@@ -385,6 +548,7 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
             status="healthy",
             local_port=local_port,
             pid=fwd.pid,
+            exit_forward_pid=exit_fwd.pid,
             hops=hops,
             exit_host=exit_host,
             created=int(time.time()),
@@ -400,7 +564,9 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
             logger.warning(f"Chain not running: {parsed.name}")
             return 0
         pid = entry.get("pid")
-        if pid:
+        for pid in (entry.get("pid"), entry.get("exit_forward_pid")):
+            if not pid:
+                continue
             try:
                 os.kill(int(pid), signal.SIGTERM)
             except (OSError, ValueError):

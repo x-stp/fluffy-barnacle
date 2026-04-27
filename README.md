@@ -117,7 +117,7 @@ cs-proxy chain status eu-us
 cs-proxy chain stop eu-us
 ```
 
-The first hop runs a SOCKS relay and the second hop runs an HTTPS CONNECT exit relay. Chain mode is intended for authorized testing of region-specific routing behavior and adds latency.
+The first hop runs a SOCKS relay and the second hop runs a WebSocket exit relay. Chain mode is intended for authorized testing of region-specific routing behavior and adds latency.
 
 Named accounts can be used when each hop should be managed with a different PAT:
 

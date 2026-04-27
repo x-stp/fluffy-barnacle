@@ -133,7 +133,7 @@ Start the chain and expose a local SOCKS endpoint.
 cs-proxy chain start eu-us --port 1080
 ```
 
-Traffic flows from the local SOCKS port to the first Codespace, then through an HTTPS CONNECT relay to the second Codespace, which opens the final outbound connection.
+Traffic flows from the local SOCKS port to the first Codespace, then through a WebSocket relay to the second Codespace, which opens the final outbound connection.
 
 #### `chain status`
 

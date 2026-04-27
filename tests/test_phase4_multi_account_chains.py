@@ -50,3 +50,18 @@ def test_chain_create_accepts_account_hop_specs(tmp_path):
     assert hops[0]["location"] == "WestEurope"
     assert hops[1]["account"] == "us"
     assert hops[1]["location"] == "EastUs"
+
+
+def test_chain_upload_injects_account_token(monkeypatch):
+    from unittest.mock import MagicMock
+    from csproxy.accounts import GitHubAccount
+    from csproxy.chains import _upload
+    from csproxy.github import GitHubManager
+
+    monkeypatch.setenv("GH_TOKEN_US", "secret")
+    gh = GitHubManager(account=GitHubAccount("us", token_env="GH_TOKEN_US"))
+    gh.runner.run = MagicMock(return_value=MagicMock(returncode=0, stderr=""))
+
+    _upload(gh, "test-cs", "/tmp/script.py", "print('ok')\n")
+
+    assert gh.runner.run.call_args.kwargs["env"] == {"GH_TOKEN": "secret"}
