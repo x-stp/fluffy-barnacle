@@ -224,6 +224,8 @@ COMMANDS:
     stop            Stop the proxy tunnel
     restart         Restart the proxy tunnel
     status          Show proxy and Codespace status
+    doctor          Diagnose setup and optionally repair local state
+    pool            Inspect and manage healthy tunnel pools
     chain           Manage two-hop Codespaces proxy chains
 
     ssh [n|name]    Open interactive shell in Codespace (menu if multiple)

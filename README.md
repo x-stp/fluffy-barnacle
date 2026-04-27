@@ -69,6 +69,9 @@ cs-proxy start                                # picks up unstarted tracked codes
 cs-proxy -n 2 start -l WestEurope -l EastUs  # two proxies, different regions (ports 1080 + 1081)
 cs-proxy status             # codespace state + per-tunnel exit IP
 cs-proxy status --watch     # auto-refresh every 2 seconds
+cs-proxy doctor --fix       # diagnose and repair safe local state/config issues
+cs-proxy pool list          # list managed tunnel pool entries
+cs-proxy pool rotate        # print a healthy tunnel port for scripts
 cs-proxy ssh                # interactive shell (menu if multiple codespaces tracked)
 cs-proxy env                # export statements for tools that read env vars
 cs-proxy burp               # upstream proxy config for Burp Suite

@@ -10,7 +10,7 @@ BASH_COMPLETION = """#!/bin/bash
 # cs-proxy bash completion
 _cs_proxy_completion() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
-    local opts="start stop restart status list create set http proxychains env burp keygen config logs split ssh run name teardown down delete rm token aliases completion pac help"
+    local opts="start stop restart status list create set http proxychains env burp keygen config logs split ssh run name teardown down delete rm token aliases account completion pac check doctor pool chain help"
     COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
 }
 complete -F _cs_proxy_completion cs-proxy
@@ -43,8 +43,13 @@ subcmds=(
     'rm:Alias for delete'
     'token:Set GitHub token'
     'aliases:Write shell aliases'
+    'account:Manage named GitHub accounts'
     'completion:Generate shell completion script'
     'pac:Generate Proxy Auto-Config'
+    'check:Run diagnostics'
+    'doctor:Diagnose and repair safe local issues'
+    'pool:Inspect managed tunnel pools'
+    'chain:Manage two-hop Codespaces chains'
     'help:Show help'
 )
 _describe 'command' subcmds

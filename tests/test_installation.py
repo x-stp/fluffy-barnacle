@@ -207,7 +207,7 @@ def check_proxy_module():
             'set', 'http', 'proxychains', 'env', 'burp', 'keygen',
             'config', 'logs', 'split', 'ssh', 'run', 'name',
             'teardown', 'down', 'delete', 'rm', 'token', 'aliases', 'account',
-            'pac', 'completion', 'check', 'chain', 'help',
+            'pac', 'completion', 'check', 'doctor', 'pool', 'chain', 'help',
         }
         registered = set(COMMANDS.keys())
         missing = expected_commands - registered
