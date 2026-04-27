@@ -224,6 +224,7 @@ COMMANDS:
     stop            Stop the proxy tunnel
     restart         Restart the proxy tunnel
     status          Show proxy and Codespace status
+    chain           Manage two-hop Codespaces proxy chains
 
     ssh [n|name]    Open interactive shell in Codespace (menu if multiple)
     run <cmd>       Run a command in the Codespace

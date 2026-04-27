@@ -73,6 +73,8 @@ cs-proxy ssh                # interactive shell (menu if multiple codespaces tra
 cs-proxy env                # export statements for tools that read env vars
 cs-proxy burp               # upstream proxy config for Burp Suite
 cs-proxy pac                # generate Proxy Auto-Config (PAC) file
+cs-proxy chain create eu-us --hop WestEurope --hop EastUs
+cs-proxy chain start eu-us  # local SOCKS -> EU Codespace -> US Codespace
 cs-proxy check              # diagnose setup, auth, ports, and state health
 ```
 
@@ -100,6 +102,19 @@ source ~/.config/cs-proxy/completion.bash
 ### Smart Proxy Rotation
 
 `cs-tools` automatically picks a healthy tunnel from `state.json`. If you have multiple tunnels running, tool traffic is rotated across them without manual port selection.
+
+### Two-Hop Codespaces Chains
+
+Experimental chain mode routes one local SOCKS endpoint through two Codespaces:
+
+```bash
+cs-proxy chain create eu-us --hop WestEurope --hop EastUs
+cs-proxy chain start eu-us --port 1080
+cs-proxy chain status eu-us
+cs-proxy chain stop eu-us
+```
+
+The first hop runs a SOCKS relay and the second hop runs an HTTPS CONNECT exit relay. Chain mode is intended for authorized testing of region-specific routing behavior and adds latency.
 
 ### Public File Hosting
 

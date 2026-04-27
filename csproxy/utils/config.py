@@ -38,6 +38,7 @@ class _ConfigData:
     locations: List[str] = field(default_factory=list)
     codespace_names: List[str] = field(default_factory=list)
     accounts: dict = field(default_factory=dict)
+    chains: dict = field(default_factory=dict)
     profile: str = ""
     profiles: dict = field(default_factory=dict)
 
@@ -102,6 +103,7 @@ class Config:
         "locations": [],
         "codespace_names": [],
         "accounts": {},
+        "chains": {},
         "profile": "",
         "profiles": {},
     }
