@@ -192,7 +192,7 @@ See the [Installation Guide](https://dstours.github.io/fluffy-barnacle/user-guid
 ## Python API
 
 ```python
-from csproxy import SSHTunnel, Config, GitHubManager, CodespaceSelector
+from csproxy import SSHTunnel, Config, GitHubManager, CodespaceSelector, GitHubAccount
 
 config = Config()
 gh = GitHubManager()
@@ -220,6 +220,16 @@ locations: []               # e.g. [WestEurope, EastUs] — one region per codes
 reconnect_delay: 5
 max_reconnect_delay: 300
 verbose: false
+
+# Named accounts store token environment variable names, not token values.
+accounts:
+  eu:
+    token_env: GH_TOKEN_EU
+  us:
+    token_env: GH_TOKEN_US
+
+# Chain definitions are usually managed with `cs-proxy chain create`.
+chains: {}
 
 # Profiles let you switch between preset configurations
 profile: ""

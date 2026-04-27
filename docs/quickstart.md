@@ -26,6 +26,7 @@ gh auth login
 
 ```bash
 cs-proxy check
+cs-proxy doctor --fix   # optional: repair safe local config/state issues
 ```
 
 This diagnoses your environment: `gh` auth, SSH keys, port availability, config, and state file health.
@@ -77,6 +78,8 @@ cs-tools --port 1081 pcurl https://target.com
 ```bash
 cs-proxy status              # one-shot status
 cs-proxy status --watch      # auto-refresh every 2 seconds
+cs-proxy pool list           # locally tracked SSH tunnels
+cs-proxy pool rotate         # print one healthy port for scripts
 ```
 
 ### Serve files publicly
@@ -104,6 +107,27 @@ curl --socks5-hostname 127.0.0.1:1080 https://ifconfig.me
 curl --socks5-hostname 127.0.0.1:1081 https://ifconfig.me
 cs-proxy status     # health + exit IP per tunnel
 cs-proxy ssh        # numbered menu to pick which codespace to shell into
+```
+
+## Two-Hop Chain
+
+For region-specific routing tests, expose one local SOCKS port that forwards through two Codespaces:
+
+```bash
+cs-proxy chain create eu-us --hop WestEurope --hop EastUs
+cs-proxy chain start eu-us --port 1080
+curl --socks5-hostname 127.0.0.1:1080 https://ifconfig.me
+cs-proxy chain stop eu-us
+```
+
+Use named accounts when each hop should be managed by a different GitHub identity:
+
+```bash
+export GH_TOKEN_EU=...
+export GH_TOKEN_US=...
+cs-proxy account add eu --token-env GH_TOKEN_EU
+cs-proxy account add us --token-env GH_TOKEN_US
+cs-proxy chain create eu-us --hop eu:WestEurope --hop us:EastUs
 ```
 
 ## Dry-Run Mode

@@ -27,13 +27,16 @@ max_reconnect_delay: 300    # max delay with exponential backoff + jitter
 dns_proxy: false
 verbose: false
 
-# Optional named GitHub accounts for future pool/chain workflows.
+# Optional named GitHub accounts for account-aware chain workflows.
 # Tokens are read from environment variables, never from CLI arguments.
 accounts:
   default:
     token_env: GH_TOKEN
   eu:
     token_env: GH_TOKEN_EU
+
+# Optional chain definitions. These are usually managed by `cs-proxy chain create`.
+chains: {}
 
 # Profiles — switch between presets without editing files
 profile: ""                 # active profile name (must match a key below)
@@ -121,6 +124,24 @@ accounts:
 ```
 
 Set those environment variables before using account-aware commands.
+
+### Chain Definitions
+
+Chain definitions are persisted under `chains` after `cs-proxy chain create`:
+
+```yaml
+chains:
+  eu-us:
+    name: eu-us
+    hop1_port: 18080
+    hop2_port: 18081
+    hops:
+      - location: WestEurope
+      - account: us
+        location: EastUs
+```
+
+The `codespace_name` fields are added after `cs-proxy chain start` creates or reuses the hop Codespaces. Edit chain definitions sparingly; prefer `cs-proxy chain create` for normal setup.
 
 ### Additional Environment Variables
 

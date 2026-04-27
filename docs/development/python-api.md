@@ -9,10 +9,13 @@ import csproxy
 
 # Core classes
 csproxy.GitHubManager        # GitHub CLI integration
+csproxy.GitHubAccount        # Named account backed by a token env var
+csproxy.CommandRunner        # Shared subprocess runner
 csproxy.SSHTunnel            # SSH SOCKS5 tunnel
 csproxy.HTTPProxyManager     # HTTP proxy (tinyproxy)
 csproxy.CodespaceSelector    # Codespace selection/creation
 csproxy.ProxychainsConfig    # Proxychains config generation
+csproxy.State                # Local tunnel state store
 
 # Tool wrappers
 csproxy.check_proxy          # Verify proxy is running
@@ -34,6 +37,28 @@ csproxy.setup_logger         # Initialize logging
 csproxy.get_logger           # Get logger instance
 csproxy.check_dependencies   # Verify external tools
 csproxy.CSProxyError         # Base exception
+```
+
+### Account-Aware GitHub Commands
+
+```python
+from csproxy import GitHubAccount, GitHubManager
+
+account = GitHubAccount("eu", token_env="GH_TOKEN_EU")
+gh = GitHubManager(account=account)
+
+# gh commands run with GH_TOKEN populated from GH_TOKEN_EU
+codespaces = gh.list_codespaces()
+```
+
+### Shared Command Runner
+
+```python
+from csproxy import CommandRunner
+
+runner = CommandRunner(default_timeout=10, dry_run=False)
+result = runner.run(["gh", "--version"])
+print(result.stdout)
 ```
 
 ## Examples

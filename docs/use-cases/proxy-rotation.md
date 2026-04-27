@@ -19,6 +19,13 @@ cs-tools --port 1081 pcurl https://target.com
 
 The rotation is random across healthy tunnels. If no healthy tunnels exist, tools fall back to the configured `socks_port`.
 
+For scripts that need the same selection logic without invoking a wrapper, use the pool command:
+
+```bash
+port=$(cs-proxy pool rotate)
+curl --socks5-hostname "127.0.0.1:${port}" https://ifconfig.me
+```
+
 ## Two Simultaneous Proxies
 
 Run two independent tunnels at once, each with a different exit IP:
@@ -39,6 +46,19 @@ cs-proxy status   # shows health and exit IP for each tunnel
 ```
 
 Route specific tools to one or the other by setting the SOCKS5 proxy endpoint explicitly, or configure Burp Suite / proxychains to use whichever suits the target.
+
+## Two-Hop Regional Chain
+
+Two independent proxies give you separate exit choices. Chain mode is different: it exposes one local SOCKS port and routes each connection through two Codespaces before the final target.
+
+```bash
+cs-proxy chain create eu-us --hop WestEurope --hop EastUs
+cs-proxy chain start eu-us --port 1080
+curl --socks5-hostname 127.0.0.1:1080 https://ifconfig.me
+cs-proxy chain stop eu-us
+```
+
+Use this for authorized routing experiments where you need traffic to traverse both regions. It adds latency and is intentionally capped at two hops.
 
 ## Manual Rotation
 

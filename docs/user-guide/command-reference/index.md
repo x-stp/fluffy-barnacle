@@ -6,7 +6,7 @@ cs-proxy provides four CLI tools, each with its own set of commands.
 
 | Tool | Entry Point | Purpose |
 |------|-------------|---------|
-| [cs-proxy](cs-proxy.md) | `cs-proxy [options] <command>` | SOCKS5/HTTP proxy management with circuit breaker, dry-run, and diagnostics |
+| [cs-proxy](cs-proxy.md) | `cs-proxy [options] <command>` | SOCKS5/HTTP proxy management with circuit breaker, dry-run, diagnostics, pool commands, and two-hop chains |
 | [cs-serve](cs-serve.md) | `cs-serve <command>` | Public file hosting and HTTP servers |
 | [cs-wg](cs-wg.md) | `sudo cs-wg <command>` | WireGuard VPN tunnel management |
 | [cs-tools](cs-tools.md) | `cs-tools <tool> [args]` | Proxied security tool wrappers with smart tunnel rotation |
@@ -54,4 +54,13 @@ sudo cs-wg status
 cs-proxy start
 cs-tools pnmap -p 80,443,8080 target.com
 cs-tools pffuf -u https://target.com/FUZZ -w list.txt
+```
+
+### Route through a two-hop chain
+
+```bash
+cs-proxy chain create eu-us --hop WestEurope --hop EastUs
+cs-proxy chain start eu-us --port 1080
+curl --socks5-hostname 127.0.0.1:1080 https://ifconfig.me
+cs-proxy chain stop eu-us
 ```

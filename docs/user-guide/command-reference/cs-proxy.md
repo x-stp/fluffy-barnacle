@@ -102,6 +102,8 @@ cs-proxy doctor --fix
 
 With `--fix`, doctor ensures the config directory exists, reconciles stale tunnel state, regenerates `proxychains.conf`, and creates a config file if one is missing.
 
+`doctor --fix` only repairs local files/state. It still returns nonzero if required dependencies or authentication are missing.
+
 #### `pool`
 
 Inspect and manage locally tracked SSH tunnel pool entries.
@@ -134,6 +136,8 @@ cs-proxy chain start eu-us --port 1080
 ```
 
 Traffic flows from the local SOCKS port to the first Codespace, then through a WebSocket relay to the second Codespace, which opens the final outbound connection.
+
+`chain start` waits for the local port forwards to accept connections before reporting the chain as started.
 
 #### `chain status`
 
@@ -181,6 +185,7 @@ Remove an account label.
 
 ```bash
 cs-proxy account remove eu
+cs-proxy account rm eu
 ```
 
 ### HTTP Proxy

@@ -16,7 +16,7 @@ Fluffy-Barnacle is an operator-focused toolkit that turns GitHub Codespaces into
 
 | Tool | Description |
 |------|-------------|
-| **[cs-proxy](user-guide/command-reference/cs-proxy.md)** | SOCKS5 and HTTP proxy via SSH tunnel with auto-reconnect, circuit breaker, and Burp Suite integration |
+| **[cs-proxy](user-guide/command-reference/cs-proxy.md)** | SOCKS5 and HTTP proxy via SSH tunnel with auto-reconnect, circuit breaker, pool commands, diagnostics, and two-hop chain mode |
 | **[cs-serve](user-guide/command-reference/cs-serve.md)** | Instant public HTTPS file hosting, redirect servers, custom HTTP responses, and data capture via `*.app.github.dev` |
 | **[cs-wg](user-guide/command-reference/cs-wg.md)** | Full WireGuard VPN tunnel with route management and traffic monitoring |
 | **[cs-tools](user-guide/command-reference/cs-tools.md)** | Drop-in wrappers for nmap, ffuf, httpx, nuclei, sqlmap with automatic SOCKS5 proxy arguments and smart tunnel rotation |
@@ -27,6 +27,9 @@ Each tool can be used from the CLI or imported directly as a [Python library](de
 
 - **Smart tunnel rotation** — `cs-tools` automatically distributes traffic across healthy tunnels
 - **`cs-proxy check`** — One-command diagnostics for setup, auth, ports, and state health
+- **`cs-proxy doctor --fix`** — Safe local repair for config, proxychains output, and stale tunnel state
+- **`cs-proxy pool`** — Inspect healthy tunnel entries, drain ports, and print a rotatable port for scripts
+- **Two-hop chains** — Route one local SOCKS endpoint through two Codespaces, with optional named accounts per hop
 - **`--dry-run`** — Preview what `start`/`stop` would do without making changes
 - **Profiles** — Switch between preset configs (e.g. `redteam` / `stealth`) without editing files
 - **Circuit breaker** — Tunnels that fail health checks 3× in a row are automatically marked dead

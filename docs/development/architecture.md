@@ -9,12 +9,16 @@ csproxy/
 ├── cli.py               # CLI argument parsing and dispatch
 │
 ├── proxy.py             # SOCKS5/HTTP proxy commands and config
+├── chains.py            # Two-hop Codespaces chain commands and relays
+├── accounts.py          # Named GitHub account configuration
 ├── serve.py             # File server commands
 ├── wireguard.py         # WireGuard VPN commands
 ├── tools.py             # Proxied tool wrappers
 │
 ├── github.py            # GitHub CLI integration (gh wrapper)
+├── runner.py            # Shared subprocess command runner
 ├── codespace.py         # Codespace selection and lifecycle
+├── state.py             # Local tunnel/process state store
 ├── tunnel.py            # SSHTunnel and HTTPProxyManager classes
 ├── display.py           # Output formatting (status, help, env exports)
 ├── templates.py         # Embedded server/setup script templates
@@ -68,6 +72,8 @@ COMMANDS = {
 
 `cli.py` looks up the command string in the `COMMANDS` dict and calls the handler.
 
+`cs-proxy chain` is implemented in `chains.py` and is exposed through `proxy.COMMANDS` so it shares the same config, logging, dry-run, and account infrastructure as other proxy commands.
+
 ## Key Classes
 
 ### `SSHTunnel` (tunnel.py)
@@ -84,7 +90,23 @@ Interactive Codespace selection and creation. Handles auto-selection (single Cod
 
 ### `GitHubManager` (github.py)
 
-Thin wrapper around the `gh` CLI. Provides methods for listing Codespaces, running arbitrary `gh` commands, and managing authentication.
+Thin wrapper around the `gh` CLI. Provides methods for listing Codespaces, running arbitrary `gh` commands, and managing authentication. It can run against a `GitHubAccount`, which injects a token from the configured environment variable for account-aware workflows.
+
+### `GitHubAccount` (accounts.py)
+
+Named account metadata for multi-account workflows. Accounts store the token environment variable name, not the token value.
+
+### `CommandRunner` (runner.py)
+
+Shared subprocess wrapper used by `GitHubManager` and tests. It centralizes timeout defaults, environment merging, dry-run behavior, and token redaction.
+
+### `State` (state.py)
+
+JSON-backed local state for tracked tunnels. It records tunnel PIDs, ports, health, Codespace names, and chain entries so status, pool, and cleanup commands can reconcile local process state.
+
+### Chain Relay (`chains.py`)
+
+Chain mode starts a SOCKS relay on the first Codespace and a WebSocket exit relay on the second Codespace. Local traffic enters through a `gh codespace ports forward` listener, traverses the first hop, then exits from the second hop to the final target. Startup waits for local forwards before reporting a chain as healthy.
 
 ### `Config` (utils/config.py)
 
