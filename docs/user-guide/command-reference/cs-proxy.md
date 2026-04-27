@@ -99,6 +99,7 @@ Create a two-hop Codespaces chain definition.
 
 ```bash
 cs-proxy chain create eu-us --hop WestEurope --hop EastUs
+cs-proxy chain create eu-us --hop eu:WestEurope --hop us:EastUs
 ```
 
 #### `chain start`
@@ -129,6 +130,35 @@ cs-proxy chain stop eu-us
 ```
 
 Chain mode is experimental and intentionally capped at two hops.
+
+### Named Accounts
+
+#### `account add`
+
+Store a named GitHub account that reads its PAT from an environment variable.
+
+```bash
+export GH_TOKEN_EU=...
+cs-proxy account add eu --token-env GH_TOKEN_EU
+```
+
+Raw PATs are rejected as command arguments. Use environment variables so tokens do not land in shell history.
+
+#### `account list`
+
+List configured account labels and token environment variable names.
+
+```bash
+cs-proxy account list
+```
+
+#### `account remove`
+
+Remove an account label.
+
+```bash
+cs-proxy account remove eu
+```
 
 ### HTTP Proxy
 

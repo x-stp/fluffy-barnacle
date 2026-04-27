@@ -244,6 +244,7 @@ COMMANDS:
     burp            Show Burp Suite configuration
 
     keygen          Generate SSH key for Codespace access
+    account         Manage named GitHub accounts for chain workflows
     config          Edit configuration
     logs [n]        Show last n lines of log (default: 50)
     token [token]   Set GitHub Personal Access Token

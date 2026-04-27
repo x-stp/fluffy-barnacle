@@ -18,6 +18,7 @@ import time
 from string import Template
 from typing import Optional
 
+from .accounts import GitHubAccount
 from .codespace import CodespaceSelector
 from .github import GitHubManager
 from .state import State
@@ -184,6 +185,33 @@ def _chain(config: Config, name: str) -> dict:
     return chain
 
 
+def parse_hop_spec(spec: str) -> dict:
+    """Parse REGION or ACCOUNT:REGION into a hop dict."""
+    if ":" in spec:
+        account, location = spec.split(":", 1)
+        if not account or not location:
+            raise ValueError(f"Invalid hop spec: {spec}")
+        return {"account": account, "location": location, "codespace_name": ""}
+    return {"location": spec, "codespace_name": ""}
+
+
+def _manager_for_hop(hop: dict, config: Config, default_gh: GitHubManager) -> GitHubManager:
+    account_name = hop.get("account", "")
+    if not account_name:
+        return default_gh
+    account = GitHubAccount.from_config(config, account_name)
+    return GitHubManager(config_dir=config.config_dir, account=account)
+
+
+def _popen_env_for_gh(gh: GitHubManager) -> Optional[dict]:
+    token = gh.load_token()
+    if not token:
+        return None
+    env = os.environ.copy()
+    env["GH_TOKEN"] = token
+    return env
+
+
 def _ssh(gh: GitHubManager, codespace: str, command: str, *, timeout: int = 30) -> subprocess.CompletedProcess:
     return gh.runner.run(
         ["gh", "codespace", "ssh", "--codespace", codespace, "--", command],
@@ -223,9 +251,11 @@ def _start_remote_script(gh: GitHubManager, codespace: str, script_path: str, la
 
 
 def _ensure_chain_hops(chain: dict, config: Config, gh: GitHubManager) -> list[dict]:
-    selector = CodespaceSelector(gh, config)
     hops = list(chain.get("hops", []))
     for idx, hop in enumerate(hops):
+        hop_gh = _manager_for_hop(hop, config, gh)
+        hop_gh.check_auth()
+        selector = CodespaceSelector(hop_gh, config)
         if hop.get("codespace_name"):
             selector.ensure_running(hop["codespace_name"])
             continue
@@ -244,7 +274,7 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
 
     p_create = sub.add_parser("create", help="Create a two-hop chain definition")
     p_create.add_argument("name")
-    p_create.add_argument("--hop", action="append", required=True, metavar="REGION")
+    p_create.add_argument("--hop", action="append", required=True, metavar="REGION|ACCOUNT:REGION")
 
     p_start = sub.add_parser("start", help="Start a chain")
     p_start.add_argument("name")
@@ -265,10 +295,7 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
         chains = _chains(config)
         chains[parsed.name] = {
             "name": parsed.name,
-            "hops": [
-                {"location": parsed.hop[0], "codespace_name": ""},
-                {"location": parsed.hop[1], "codespace_name": ""},
-            ],
+            "hops": [parse_hop_spec(parsed.hop[0]), parse_hop_spec(parsed.hop[1])],
             "hop1_port": DEFAULT_HOP1_PORT,
             "hop2_port": DEFAULT_HOP2_PORT,
         }
@@ -298,7 +325,6 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
             print(f"[dry-run] Would start chain {parsed.name}")
             return 0
 
-        gh.check_auth()
         hops = _ensure_chain_hops(chain, config, gh)
         if len(hops) != 2:
             raise ValueError("Chains must have exactly two hops")
@@ -309,6 +335,8 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
         config.save()
 
         hop1, hop2 = hops
+        hop1_gh = _manager_for_hop(hop1, config, gh)
+        hop2_gh = _manager_for_hop(hop2, config, gh)
         hop1_name = hop1["codespace_name"]
         hop2_name = hop2["codespace_name"]
         hop1_port = int(chain.get("hop1_port", DEFAULT_HOP1_PORT))
@@ -324,15 +352,15 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
         exit_path = f"/tmp/csproxy_chain_exit_{hop2_port}.py"
         socks_path = f"/tmp/csproxy_chain_socks_{hop1_port}.py"
 
-        _upload(gh, hop2_name, exit_path, exit_script)
-        _start_remote_script(gh, hop2_name, exit_path, f"csproxy_chain_exit_{hop2_port}")
-        gh.run_gh_command(
+        _upload(hop2_gh, hop2_name, exit_path, exit_script)
+        _start_remote_script(hop2_gh, hop2_name, exit_path, f"csproxy_chain_exit_{hop2_port}")
+        hop2_gh.run_gh_command(
             ["codespace", "ports", "visibility", f"{hop2_port}:public", "--codespace", hop2_name],
             check=False,
         )
 
-        _upload(gh, hop1_name, socks_path, socks_script)
-        _start_remote_script(gh, hop1_name, socks_path, f"csproxy_chain_socks_{hop1_port}")
+        _upload(hop1_gh, hop1_name, socks_path, socks_script)
+        _start_remote_script(hop1_gh, hop1_name, socks_path, f"csproxy_chain_socks_{hop1_port}")
 
         fwd = subprocess.Popen(
             [
@@ -347,6 +375,7 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
+            env=_popen_env_for_gh(hop1_gh),
         )
 
         State(config.config_dir).add_tunnel(
@@ -379,7 +408,8 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
         for hop in entry.get("hops", []):
             name = hop.get("codespace_name")
             if name:
-                _ssh(gh, name, "pkill -f csproxy_chain_ 2>/dev/null || true", timeout=10)
+                hop_gh = _manager_for_hop(hop, config, gh)
+                _ssh(hop_gh, name, "pkill -f csproxy_chain_ 2>/dev/null || true", timeout=10)
         state.remove_tunnel(tunnel_id=f"chain-{parsed.name}")
         logger.info(f"Stopped chain: {parsed.name}")
         return 0
@@ -392,6 +422,7 @@ def chain_help() -> str:
         """\
         Chain commands:
           cs-proxy chain create NAME --hop WestEurope --hop EastUs
+          cs-proxy chain create NAME --hop eu:WestEurope --hop us:EastUs
           cs-proxy chain start NAME [--port 1080]
           cs-proxy chain status [NAME]
           cs-proxy chain stop NAME
