@@ -12,6 +12,7 @@ import argparse
 import os
 import shlex
 import signal
+import socket
 import subprocess
 import textwrap
 import time
@@ -397,6 +398,19 @@ def _start_remote_script(gh: GitHubManager, codespace: str, script_path: str, la
     time.sleep(1)
 
 
+def _wait_local_forward(port: int, process: subprocess.Popen, label: str, timeout: int = 20) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError(f"{label} port forward exited before becoming ready")
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                return
+        except OSError:
+            time.sleep(0.25)
+    raise RuntimeError(f"Timed out waiting for {label} on 127.0.0.1:{port}")
+
+
 def _ensure_chain_hops(chain: dict, config: Config, gh: GitHubManager) -> list[dict]:
     hops = list(chain.get("hops", []))
     for idx, hop in enumerate(hops):
@@ -516,7 +530,7 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
             start_new_session=True,
             env=_popen_env_for_gh(hop2_gh),
         )
-        time.sleep(2)
+        _wait_local_forward(hop2_port, exit_fwd, "exit relay")
         hop2_gh.run_gh_command(
             ["codespace", "ports", "visibility", f"{hop2_port}:public", "--codespace", hop2_name],
             check=False,
@@ -540,6 +554,7 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
             start_new_session=True,
             env=_popen_env_for_gh(hop1_gh),
         )
+        _wait_local_forward(local_port, fwd, "chain SOCKS")
 
         State(config.config_dir).add_tunnel(
             id=f"chain-{parsed.name}",
