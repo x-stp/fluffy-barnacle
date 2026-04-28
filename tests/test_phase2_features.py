@@ -608,6 +608,41 @@ def test_main_tools_unknown_tool():
     assert main_tools(['notatool']) == 1
 
 
+def test_sanitize_ffuf_args_caps_threads():
+    """_sanitize_ffuf_args caps -t to 20 when user requests more."""
+    from csproxy.tools import _sanitize_ffuf_args
+
+    result = _sanitize_ffuf_args(['-u', 'http://target.com', '-t', '50'])
+    idx = result.index('-t')
+    assert result[idx + 1] == '20'
+
+
+def test_sanitize_ffuf_args_caps_joined_threads():
+    """_sanitize_ffuf_args handles -t50 style arguments."""
+    from csproxy.tools import _sanitize_ffuf_args
+
+    result = _sanitize_ffuf_args(['-u', 'http://target.com', '-t50'])
+    assert '-t20' in result
+
+
+def test_sanitize_ffuf_args_adds_default_threads():
+    """_sanitize_ffuf_args adds -t 20 when not explicitly set."""
+    from csproxy.tools import _sanitize_ffuf_args
+
+    result = _sanitize_ffuf_args(['-u', 'http://target.com'])
+    idx = result.index('-t')
+    assert result[idx + 1] == '20'
+
+
+def test_sanitize_ffuf_args_respects_low_threads():
+    """_sanitize_ffuf_args does not override threads <= 20."""
+    from csproxy.tools import _sanitize_ffuf_args
+
+    result = _sanitize_ffuf_args(['-u', 'http://target.com', '-t', '10'])
+    idx = result.index('-t')
+    assert result[idx + 1] == '10'
+
+
 def test_main_tools_timeout_passed_to_wrapper():
     """--timeout is forwarded to the tool wrapper."""
     from csproxy.tools import main_tools

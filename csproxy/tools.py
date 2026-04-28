@@ -379,6 +379,56 @@ def pnuclei(
     ).returncode
 
 
+def _sanitize_ffuf_args(args: List[str]) -> List[str]:
+    """
+    Cap ffuf threads to prevent SSH tunnel overload.
+
+    ffuf defaults to 40 threads, which can overwhelm a single SOCKS5
+    tunnel. When running through the proxy we cap at 20 and warn if
+    the user requested more.
+    """
+    logger = get_logger()
+    sanitized = list(args)
+    thread_val = None
+    thread_idx = None
+
+    i = 0
+    while i < len(sanitized):
+        arg = sanitized[i]
+        if arg == '-t':
+            if i + 1 < len(sanitized):
+                thread_idx = i
+                try:
+                    thread_val = int(sanitized[i + 1])
+                except ValueError:
+                    pass
+            break
+        if arg.startswith('-t') and len(arg) > 2:
+            thread_idx = i
+            try:
+                thread_val = int(arg[2:])
+            except ValueError:
+                pass
+            break
+        i += 1
+
+    if thread_val is None:
+        # ffuf default is 40; enforce our cap when not explicitly set
+        sanitized.append('-t')
+        sanitized.append('20')
+        logger.info('Capped ffuf threads to 20 (default 40 would overload the proxy)')
+    elif thread_val > 20:
+        if sanitized[thread_idx].startswith('-t') and len(sanitized[thread_idx]) > 2:
+            sanitized[thread_idx] = '-t20'
+        else:
+            sanitized[thread_idx + 1] = '20'
+        logger.warning(
+            f'Reduced ffuf threads from {thread_val} to 20 to protect the SOCKS5 tunnel'
+        )
+
+    return sanitized
+
+
 def pffuf(
     args: List[str],
     host: str = '127.0.0.1',
@@ -390,6 +440,8 @@ def pffuf(
     Run ffuf with SOCKS5 proxy.
 
     Equivalent to pffuf() in tools-wrapper.sh.
+
+    Auto-caps threads to 20 to avoid overwhelming the tunnel.
 
     Args:
         args: ffuf arguments
@@ -404,6 +456,7 @@ def pffuf(
     port = port or _get_proxy_port(config)
     if not check_proxy(host, port):
         return 1
+    args = _sanitize_ffuf_args(args)
     return subprocess.run(
         ['ffuf', '-x', f'socks5://{host}:{port}'] + args,
         timeout=timeout,

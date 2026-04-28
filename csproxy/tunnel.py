@@ -72,6 +72,7 @@ class SSHTunnel:
             '-N',
             '-o', 'ServerAliveInterval=30',
             '-o', 'ServerAliveCountMax=3',
+            '-o', 'TCPKeepAlive=yes',
             '-o', 'ExitOnForwardFailure=yes',
             '-o', 'ControlMaster=no',
             '-o', 'ControlPath=none',
