@@ -9,12 +9,12 @@ integration with common security tools.
 
 import os
 import shutil
-import subprocess
 import time
 from pathlib import Path
 from typing import Optional
 
 from .github import GitHubManager
+from .runner import CommandRunner
 from .state import State
 from .chains import cmd_chain
 from .utils import (
@@ -95,9 +95,10 @@ def generate_ssh_key(config: Config) -> None:
             return
 
     logger.info("Generating SSH key for Codespace access...")
+    runner = CommandRunner()
 
     datestamp = time.strftime('%Y%m%d')
-    result = subprocess.run(
+    result = runner.run(
         [
             'ssh-keygen', '-t', 'ed25519',
             '-f', str(key_file),
@@ -139,16 +140,17 @@ def set_github_token(token: str, config: Config, gh: GitHubManager) -> None:
     if not token:
         raise ValueError("No token provided")
 
-    if not (token.startswith('ghp_') or token.startswith('ghs_')):
-        logger.warning("Token doesn't match expected format (ghp_* or ghs_*)")
+    if not (token.startswith('ghp_') or token.startswith('ghs_') or token.startswith('github_pat_')):
+        logger.warning("Token doesn't match expected format (ghp_*, ghs_*, or github_pat_*)")
         answer = input("Continue anyway? [y/N] ").strip().lower()
         if answer != 'y':
             raise ValueError("Aborted")
 
     logger.info("Validating token...")
     os.environ['GH_TOKEN'] = token
+    gh.runner.redacted_values = tuple([*gh.runner.redacted_values, token])
 
-    result = subprocess.run(['gh', 'auth', 'status'], capture_output=True)
+    result = gh.runner.run(['gh', 'auth', 'status'], capture_output=True, env={'GH_TOKEN': token})
     if result.returncode != 0:
         raise GitHubAuthError("Token validation failed. Check scopes: codespace, repo")
 
@@ -527,8 +529,10 @@ def cmd_run(args, config: Config, gh: GitHubManager) -> int:
     selector = CodespaceSelector(gh, config)
     selector.ensure_running(codespace)
 
-    result = subprocess.run(
-        ['gh', 'codespace', 'ssh', '--codespace', codespace, '--'] + args
+    result = gh.runner.run(
+        ['gh', 'codespace', 'ssh', '--codespace', codespace, '--'] + args,
+        capture_output=False,
+        timeout=None,
     )
     return result.returncode
 
@@ -841,7 +845,7 @@ def cmd_check(args, config: Config, gh: GitHubManager) -> int:
     # 1. GitHub CLI
     if shutil.which('gh'):
         _ok("gh CLI is installed")
-        result = subprocess.run(['gh', 'auth', 'status'], capture_output=True, text=True)
+        result = gh.runner.run(['gh', 'auth', 'status'], capture_output=True, text=True)
         if result.returncode == 0:
             _ok("gh CLI is authenticated")
         else:

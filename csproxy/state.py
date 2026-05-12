@@ -4,23 +4,17 @@ from __future__ import annotations
 Lightweight JSON-based state management for csproxy.
 
 Replaces fragile flat PID files with a single atomic state.json.
-All writes are atomic (tempfile + os.replace) and guarded by a
-spinlock (os.O_CREAT|os.O_EXCL) with stale-lock detection.
-
-Locking notes:
-- os.O_CREAT | os.O_EXCL is atomic on POSIX and on Windows NTFS.
-- On Windows network drives (SMB) the atomicity guarantee may be weaker,
-  so we combine it with mtime-based stale-lock detection as a fallback.
-- The lock file contains the PID of the holder. If that process is dead
-  (or the lock file is older than 30s), we force-break it.
+All writes are atomic (tempfile + os.replace) and guarded by portalocker
+when installed, with a stdlib advisory-lock fallback.
 """
 
 import json
 import os
 import tempfile
-import time
 from pathlib import Path
 from typing import Any, Optional
+
+from .locking import file_lock
 
 
 def _pid_exists(pid: int) -> bool:
@@ -105,67 +99,23 @@ class State:
             Path(tmp.name).unlink(missing_ok=True)
             raise
 
-    def _acquire_lock(self, timeout: float = 5.0) -> None:
-        """
-        Acquire an advisory lock using atomic file creation.
-
-        Uses os.O_CREAT | os.O_EXCL which is atomic on POSIX and Windows NTFS.
-        If the lock file already exists, we check whether the owning process is
-        still alive (via the PID stored inside). Dead locks are force-broken.
-        As a fallback for network drives where O_EXCL may be unreliable, locks
-        older than 30 seconds are also considered stale.
-        """
-        start = time.time()
-        my_pid = os.getpid()
-        while True:
-            try:
-                fd = os.open(
-                    str(self._lock_path),
-                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
-                )
-                os.write(fd, str(my_pid).encode())
-                os.close(fd)
-                return
-            except FileExistsError:
-                # Stale lock detection: by PID and by mtime
-                try:
-                    lock_pid = int(self._lock_path.read_text().strip())
-                    stale_by_age = (
-                        time.time() - self._lock_path.stat().st_mtime > 30
-                    )
-                    if lock_pid != my_pid and (not _pid_exists(lock_pid) or stale_by_age):
-                        self._lock_path.unlink(missing_ok=True)
-                        continue
-                except (ValueError, OSError):
-                    self._lock_path.unlink(missing_ok=True)
-                    continue
-
-                if time.time() - start > timeout:
-                    raise TimeoutError(
-                        f"Could not acquire state lock ({self._lock_path}). "
-                        "Another cs-proxy process may be running."
-                    )
-                time.sleep(0.05)
-
-    def _release_lock(self) -> None:
-        """Release the advisory lock."""
-        self._lock_path.unlink(missing_ok=True)
-
     def load(self) -> dict:
         """Load state under lock."""
-        self._acquire_lock()
-        try:
+        with file_lock(self._lock_path):
             return self._read()
-        finally:
-            self._release_lock()
 
     def save(self, data: dict) -> None:
         """Save state under lock."""
-        self._acquire_lock()
-        try:
+        with file_lock(self._lock_path):
             self._write(data)
-        finally:
-            self._release_lock()
+
+    def _update_locked(self, updater):
+        """Run a read-modify-write operation under a single file lock."""
+        with file_lock(self._lock_path):
+            data = self._read()
+            result = updater(data)
+            self._write(data)
+            return result
 
     # ------------------------------------------------------------------
     # Public API
@@ -177,27 +127,26 @@ class State:
 
         Call this on every CLI startup so stale state from previous runs is cleaned up.
         """
-        data = self.load()
-        changed = False
-        crashed = []
-        for t in data.get("tunnels", []):
-            if t.get("status") in ("stopped", "crashed", "dead"):
-                continue
-            pid = t.get("pid")
-            alive = _pid_exists(pid) if pid else False
-            if not alive:
-                t["status"] = "crashed"
-                crashed.append(t)
-                changed = True
-        if changed:
-            self.save(data)
-        return crashed
+        def updater(data):
+            crashed = []
+            for t in data.get("tunnels", []):
+                if t.get("status") in ("stopped", "crashed", "dead"):
+                    continue
+                pid = t.get("pid")
+                alive = _pid_exists(pid) if pid else False
+                if not alive:
+                    t["status"] = "crashed"
+                    crashed.append(t)
+            return crashed
+
+        return self._update_locked(updater)
 
     def clear_all(self) -> None:
         """Remove all tunnels from state."""
-        data = self.load()
-        data["tunnels"] = []
-        self.save(data)
+        def updater(data):
+            data["tunnels"] = []
+
+        self._update_locked(updater)
 
     def get_tunnels(
         self, kind: Optional[str] = None, status: Optional[str] = None
@@ -220,33 +169,36 @@ class State:
 
     def add_tunnel(self, **fields: Any) -> None:
         """Add or replace a tunnel entry by its 'id'."""
-        data = self.load()
-        tunnels = [t for t in data.get("tunnels", []) if t.get("id") != fields.get("id")]
-        tunnels.append(fields)
-        data["tunnels"] = tunnels
-        self.save(data)
+        def updater(data):
+            tunnels = [t for t in data.get("tunnels", []) if t.get("id") != fields.get("id")]
+            tunnels.append(fields)
+            data["tunnels"] = tunnels
+
+        self._update_locked(updater)
 
     def remove_tunnel(
         self, port: Optional[int] = None, tunnel_id: Optional[str] = None
     ) -> None:
         """Remove a tunnel by port and/or tunnel_id."""
-        data = self.load()
-        tunnels = data.get("tunnels", [])
-        if port is not None:
-            tunnels = [t for t in tunnels if t.get("port") != port]
-        if tunnel_id is not None:
-            tunnels = [t for t in tunnels if t.get("id") != tunnel_id]
-        data["tunnels"] = tunnels
-        self.save(data)
+        def updater(data):
+            tunnels = data.get("tunnels", [])
+            if port is not None:
+                tunnels = [t for t in tunnels if t.get("port") != port]
+            if tunnel_id is not None:
+                tunnels = [t for t in tunnels if t.get("id") != tunnel_id]
+            data["tunnels"] = tunnels
+
+        self._update_locked(updater)
 
     def update_tunnel(self, port: int, **kwargs: Any) -> None:
         """Update fields for the tunnel matching the given port."""
-        data = self.load()
-        for t in data.get("tunnels", []):
-            if t.get("port") == port:
-                t.update(kwargs)
-                break
-        self.save(data)
+        def updater(data):
+            for t in data.get("tunnels", []):
+                if t.get("port") == port:
+                    t.update(kwargs)
+                    break
+
+        self._update_locked(updater)
 
     def mark_crashed(self, port: int) -> None:
         """Convenience wrapper to mark a tunnel as crashed."""
@@ -260,17 +212,20 @@ class State:
 
         Returns True if the circuit breaker tripped (status set to 'dead').
         """
-        data = self.load()
-        for t in data.get("tunnels", []):
-            if t.get("port") == port:
-                now = int(time.time())
-                last = t.get("last_failure", 0)
-                if now - last > window:
-                    t["failures"] = 0
-                t["failures"] = t.get("failures", 0) + 1
-                t["last_failure"] = now
-                if t["failures"] >= max_failures:
-                    t["status"] = "dead"
-                self.save(data)
-                return t["status"] == "dead"
-        return False
+        def updater(data):
+            for t in data.get("tunnels", []):
+                if t.get("port") == port:
+                    import time
+
+                    now = int(time.time())
+                    last = t.get("last_failure", 0)
+                    if now - last > window:
+                        t["failures"] = 0
+                    t["failures"] = t.get("failures", 0) + 1
+                    t["last_failure"] = now
+                    if t["failures"] >= max_failures:
+                        t["status"] = "dead"
+                    return t["status"] == "dead"
+            return False
+
+        return self._update_locked(updater)

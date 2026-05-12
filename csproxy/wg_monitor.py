@@ -11,6 +11,7 @@ import re
 import subprocess
 from typing import Optional
 
+from .runner import CommandRunner
 from .utils import get_logger
 from .wg_constants import WG_INTERFACE
 
@@ -38,7 +39,7 @@ def monitor_traffic(mode: Optional[str], interface: str = WG_INTERFACE) -> None:
     logger = get_logger()
     _check_root()
 
-    result = subprocess.run(['ip', 'link', 'show', interface], capture_output=True)
+    result = CommandRunner().run(['ip', 'link', 'show', interface], capture_output=True)
     if result.returncode != 0:
         raise RuntimeError(f"WireGuard interface {interface} not found. Run 'cs-wg up' first.")
 
@@ -101,7 +102,10 @@ def monitor_traffic(mode: Optional[str], interface: str = WG_INTERFACE) -> None:
 
         elif mode == 'all':
             logger.info("Monitoring all traffic (summary)...")
-            subprocess.run(['tcpdump', '-i', interface, '-n', '-l', '-t', '-q'])
+            CommandRunner(default_timeout=None).run(
+                ['tcpdump', '-i', interface, '-n', '-l', '-t', '-q'],
+                capture_output=False,
+            )
 
         elif mode == 'leak':
             logger.info("Monitoring for traffic leaks on eth0...")

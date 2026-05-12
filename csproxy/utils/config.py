@@ -31,6 +31,8 @@ class _ConfigData:
     codespace_name: str = ""
     reconnect_delay: int = 5
     max_reconnect_delay: int = 300
+    health_check_url: str = "https://ifconfig.me"
+    worker_log_max_bytes: int = 2_000_000
     dns_proxy: bool = False
     verbose: bool = False
     cloudflare_api_token: str = ""
@@ -68,6 +70,10 @@ class _ConfigData:
             raise ValueError(f"reconnect_delay must be >= 1, got {self.reconnect_delay}")
         if self.max_reconnect_delay < self.reconnect_delay:
             raise ValueError("max_reconnect_delay must be >= reconnect_delay")
+        if not self.health_check_url.startswith(("http://", "https://")):
+            raise ValueError("health_check_url must start with http:// or https://")
+        if self.worker_log_max_bytes < 0:
+            raise ValueError("worker_log_max_bytes must be >= 0")
 
     def set_field(self, key: str, value: Any) -> None:
         """Set a field with full schema re-validation."""
@@ -96,6 +102,8 @@ class Config:
         "codespace_name": "",
         "reconnect_delay": 5,
         "max_reconnect_delay": 300,
+        "health_check_url": "https://ifconfig.me",
+        "worker_log_max_bytes": 2_000_000,
         "dns_proxy": False,
         "verbose": False,
         "cloudflare_api_token": "",
@@ -144,6 +152,8 @@ class Config:
             "CODESPACE_NAME": ("codespace_name", str),
             "RECONNECT_DELAY": ("reconnect_delay", int),
             "MAX_RECONNECT_DELAY": ("max_reconnect_delay", int),
+            "HEALTH_CHECK_URL": ("health_check_url", str),
+            "WORKER_LOG_MAX_BYTES": ("worker_log_max_bytes", int),
             "DNS_PROXY": ("dns_proxy", lambda x: x.lower() in ("true", "1", "yes")),
             "VERBOSE": ("verbose", lambda x: x.lower() in ("true", "1", "yes")),
             "NUM_PROXIES": ("num_proxies", int),
@@ -279,6 +289,14 @@ class Config:
         return self._data.max_reconnect_delay
 
     @property
+    def health_check_url(self) -> str:
+        return self._data.health_check_url
+
+    @property
+    def worker_log_max_bytes(self) -> int:
+        return self._data.worker_log_max_bytes
+
+    @property
     def dns_proxy(self) -> bool:
         return self._data.dns_proxy
 
@@ -330,6 +348,8 @@ locations: []
 
 reconnect_delay: 5
 max_reconnect_delay: 300
+health_check_url: "https://ifconfig.me"
+worker_log_max_bytes: 2000000
 
 # =============================================================================
 # Advanced Settings

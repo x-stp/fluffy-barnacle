@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from .runner import CommandRunner
 from .state import State
 from .utils import Config, ProxyError, SSHTunnelError, get_logger
 
@@ -35,10 +36,13 @@ class SSHTunnel:
         self.codespace_name = codespace_name
         self.port = port or config.socks_port
         self.logger = get_logger()
+        self.runner = CommandRunner()
         self.pid_file = config.config_dir / f'proxy{pid_suffix}.pid'
         self.stop_file = config.config_dir / f'proxy{pid_suffix}.pid.stop'
         self.log_file = config.config_dir / f'proxy{pid_suffix}.log'
         self.spec_file = config.config_dir / 'workers' / f'{self.port}.json'
+        self.ready_file = self.spec_file.with_suffix('.ready')
+        self.status_file = self.spec_file.with_suffix('.status.json')
         self.state = State(config.config_dir)
         self.tunnel_id = f'ssh-{self.port}'
         self._process: Optional[subprocess.Popen] = None
@@ -64,6 +68,8 @@ class SSHTunnel:
 
         self.logger.info(f"Starting SOCKS5 proxy on port {self.port}...")
         self.stop_file.unlink(missing_ok=True)
+        self.ready_file.unlink(missing_ok=True)
+        self.status_file.unlink(missing_ok=True)
         self.spec_file.parent.mkdir(parents=True, exist_ok=True)
 
         ssh_args = [
@@ -84,8 +90,11 @@ class SSHTunnel:
             'gh_cmd': gh_cmd,
             'log_file': str(self.log_file),
             'stop_file': str(self.stop_file),
+            'ready_file': str(self.ready_file),
+            'status_file': str(self.status_file),
             'reconnect_delay': self.config.reconnect_delay,
             'max_reconnect_delay': self.config.max_reconnect_delay,
+            'log_max_bytes': self.config.worker_log_max_bytes,
         }
         self.spec_file.write_text(json.dumps(spec))
 
@@ -111,29 +120,7 @@ class SSHTunnel:
         self._process = proc
         self._write_pid(proc.pid)
 
-        # Quick verification: ensure the worker didn't crash immediately
-        # and that it still has its spec file (proves it started reading it)
-        time.sleep(0.3)
-        if proc.poll() is not None:
-            stderr_text = ""
-            try:
-                if stderr_file.exists():
-                    stderr_text = stderr_file.read_text().strip()
-                    stderr_file.unlink(missing_ok=True)
-            except OSError:
-                pass
-            self.spec_file.unlink(missing_ok=True)
-            msg = (
-                f"Tunnel worker exited immediately with code {proc.returncode}. "
-                f"Check that 'python -m csproxy._worker' is executable."
-            )
-            if stderr_text:
-                msg += f" Worker stderr: {stderr_text[:500]}"
-            raise SSHTunnelError(msg)
-        if not self.spec_file.exists():
-            raise SSHTunnelError(
-                "Tunnel worker started but spec file was cleaned up unexpectedly."
-            )
+        self._wait_for_worker_ready(proc, stderr_file, timeout=2.0)
 
         self.state.add_tunnel(
             id=self.tunnel_id,
@@ -190,9 +177,17 @@ class SSHTunnel:
             except (ProcessLookupError, PermissionError):
                 pass
 
+        # The worker may be killed while its child gh/ssh process is still
+        # holding the dynamic SOCKS listener. Make stop idempotently clear the
+        # port so a successful stop means the proxy is actually gone.
+        self._kill_port_holders()
+
         self.pid_file.unlink(missing_ok=True)
+        self.stop_file.unlink(missing_ok=True)
         self.spec_file.unlink(missing_ok=True)
         self.spec_file.with_suffix('.stderr').unlink(missing_ok=True)
+        self.ready_file.unlink(missing_ok=True)
+        self.status_file.unlink(missing_ok=True)
         self.state.remove_tunnel(port=self.port)
         self.logger.info("Proxy stopped")
 
@@ -222,6 +217,8 @@ class SSHTunnel:
         self.stop_file.unlink(missing_ok=True)
         self.spec_file.unlink(missing_ok=True)
         self.spec_file.with_suffix('.stderr').unlink(missing_ok=True)
+        self.ready_file.unlink(missing_ok=True)
+        self.status_file.unlink(missing_ok=True)
         self.state.remove_tunnel(port=self.port)
 
     def _kill_port_holders(self) -> None:
@@ -229,7 +226,7 @@ class SSHTunnel:
         try:
             if sys.platform == 'darwin':
                 # lsof -ti:port gives PIDs
-                result = subprocess.run(
+                result = self.runner.run(
                     ['lsof', '-ti', f':{self.port}'],
                     capture_output=True, text=True, timeout=5
                 )
@@ -240,7 +237,7 @@ class SSHTunnel:
                         except (ValueError, ProcessLookupError, PermissionError):
                             pass
             elif sys.platform == 'linux':
-                result = subprocess.run(
+                result = self.runner.run(
                     ['fuser', '-k', f'{self.port}/tcp'],
                     capture_output=True, timeout=5
                 )
@@ -271,17 +268,20 @@ class SSHTunnel:
         """Remove stale PID files and state entries for dead processes."""
         self.pid_file.unlink(missing_ok=True)
         self.spec_file.unlink(missing_ok=True)
+        self.ready_file.unlink(missing_ok=True)
+        self.status_file.unlink(missing_ok=True)
         self.state.remove_tunnel(port=self.port)
 
     def health_check(self, timeout: int = 5) -> bool:
         """Verify the SOCKS5 proxy is responding."""
-        result = subprocess.run(
+        health_url = self.config.health_check_url
+        result = self.runner.run(
             [
                 'curl', '-s',
                 '--connect-timeout', str(timeout),
                 '--max-time', str(timeout + 2),
                 '--socks5-hostname', f'127.0.0.1:{self.port}',
-                'https://ifconfig.me'
+                health_url,
             ],
             capture_output=True,
             timeout=timeout + 5
@@ -302,18 +302,62 @@ class SSHTunnel:
 
     def get_exit_ip(self) -> Optional[str]:
         """Get the exit IP address through the proxy."""
-        result = subprocess.run(
+        health_url = self.config.health_check_url
+        result = self.runner.run(
             [
                 'curl', '-s',
                 '--connect-timeout', '5',
                 '--socks5-hostname', f'127.0.0.1:{self.port}',
-                'https://ifconfig.me'
+                health_url,
             ],
             capture_output=True,
             text=True,
             timeout=10
         )
         return result.stdout.strip() if result.returncode == 0 else None
+
+    def _wait_for_worker_ready(
+        self,
+        proc: subprocess.Popen,
+        stderr_file: Path,
+        *,
+        timeout: float,
+    ) -> None:
+        """Wait for the detached worker to acknowledge it loaded its spec."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                stderr_text = ""
+                try:
+                    if stderr_file.exists():
+                        stderr_text = stderr_file.read_text().strip()
+                        stderr_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                self.spec_file.unlink(missing_ok=True)
+                self.ready_file.unlink(missing_ok=True)
+                self.status_file.unlink(missing_ok=True)
+                msg = (
+                    f"Tunnel worker exited immediately with code {proc.returncode}. "
+                    f"Check that 'python -m csproxy._worker' is executable."
+                )
+                if stderr_text:
+                    msg += f" Worker stderr: {stderr_text[:500]}"
+                raise SSHTunnelError(msg)
+            if self.ready_file.exists():
+                return
+            time.sleep(0.05)
+        self.spec_file.unlink(missing_ok=True)
+        status_text = ""
+        try:
+            if self.status_file.exists():
+                status_text = self.status_file.read_text().strip()[:500]
+        except OSError:
+            status_text = ""
+        message = "Tunnel worker did not signal readiness after loading its spec."
+        if status_text:
+            message += f" Worker status: {status_text}"
+        raise SSHTunnelError(message)
 
     def _write_pid(self, pid: int) -> None:
         """Write PID to PID file."""
@@ -345,7 +389,7 @@ class HTTPProxyManager:
     def _install_tinyproxy(self) -> None:
         """Attempt to install tinyproxy via apt-get."""
         self.logger.warning("tinyproxy not installed. Installing...")
-        result = subprocess.run(
+        result = CommandRunner().run(
             ['sudo', 'apt-get', 'install', '-y', 'tinyproxy'],
             capture_output=True
         )
@@ -387,9 +431,10 @@ Upstream socks5 127.0.0.1:{self.config.socks_port}
 
         self._write_config()
 
-        result = subprocess.run(
+        result = CommandRunner().run(
             ['tinyproxy', '-c', str(self.conf_file)],
-            capture_output=True
+            capture_output=True,
+            text=False,
         )
 
         if result.returncode != 0:
@@ -402,6 +447,6 @@ Upstream socks5 127.0.0.1:{self.config.socks_port}
     def stop(self) -> None:
         """Stop tinyproxy if running."""
         try:
-            subprocess.run(['pkill', 'tinyproxy'], capture_output=True)
+            CommandRunner().run(['pkill', 'tinyproxy'], capture_output=True)
         except FileNotFoundError:
             pass

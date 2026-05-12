@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from .github import GitHubManager
+from .runner import CommandRunner
 from .templates import WG_REMOTE_SETUP_SCRIPT as _REMOTE_SETUP_SCRIPT
 from .utils import Config, get_logger
 
@@ -36,7 +37,7 @@ def _run_gh(args: list, sudo_user: Optional[str] = None,
         cmd = ['sudo', '-u', sudo_user, 'gh'] + args
     else:
         cmd = ['gh'] + args
-    return subprocess.run(cmd, **kwargs)
+    return CommandRunner().run(cmd, **kwargs)
 
 
 def _ensure_dirs(wg_dir: Path, config_dir: Path, sudo_user: Optional[str] = None) -> None:
@@ -53,8 +54,8 @@ def _ensure_dirs(wg_dir: Path, config_dir: Path, sudo_user: Optional[str] = None
         pass
 
     if os.geteuid() == 0 and sudo_user:
-        subprocess.run(['chown', '-R', f'{sudo_user}:{sudo_user}', str(config_dir)],
-                       capture_output=True)
+        CommandRunner().run(['chown', '-R', f'{sudo_user}:{sudo_user}', str(config_dir)],
+                            capture_output=True)
 
 
 def generate_keys(wg_dir: Path) -> None:
@@ -70,13 +71,14 @@ def generate_keys(wg_dir: Path) -> None:
     local_priv = wg_dir / 'local_private.key'
     local_pub = wg_dir / 'local_public.key'
     if not local_priv.exists():
-        result = subprocess.run(['wg', 'genkey'], capture_output=True, text=True, check=True)
+        runner = CommandRunner()
+        result = runner.run(['wg', 'genkey'], capture_output=True, text=True, check=True)
         private_key = result.stdout.strip()
         local_priv.write_text(private_key)
         local_priv.chmod(0o600)
 
-        result = subprocess.run(['wg', 'pubkey'], input=private_key,
-                                capture_output=True, text=True, check=True)
+        result = runner.run(['wg', 'pubkey'], input=private_key,
+                            capture_output=True, text=True, check=True)
         local_pub.write_text(result.stdout.strip())
         logger.info("Generated local keypair")
     else:
@@ -86,13 +88,14 @@ def generate_keys(wg_dir: Path) -> None:
     remote_priv = wg_dir / 'remote_private.key'
     remote_pub = wg_dir / 'remote_public.key'
     if not remote_priv.exists():
-        result = subprocess.run(['wg', 'genkey'], capture_output=True, text=True, check=True)
+        runner = CommandRunner()
+        result = runner.run(['wg', 'genkey'], capture_output=True, text=True, check=True)
         private_key = result.stdout.strip()
         remote_priv.write_text(private_key)
         remote_priv.chmod(0o600)
 
-        result = subprocess.run(['wg', 'pubkey'], input=private_key,
-                                capture_output=True, text=True, check=True)
+        result = runner.run(['wg', 'pubkey'], input=private_key,
+                            capture_output=True, text=True, check=True)
         remote_pub.write_text(result.stdout.strip())
         logger.info("Generated remote keypair")
     else:
@@ -264,20 +267,26 @@ def build_remote_setup_script(wg_dir: Path, remote_ip: str = _WG_REMOTE_IP,
 
     Equivalent to generate_remote_setup_script() in cs-wg.sh.
 
+    The script intentionally does not embed WireGuard private keys. Runtime key
+    material is sent over stdin by ``remote_setup_secret_payload``.
+
     Returns:
-        Complete Bash script content with keys embedded.
+        Complete Bash script content without private key material.
     """
-    remote_priv = (wg_dir / 'remote_private.key').read_text().strip()
-    local_pub = (wg_dir / 'local_public.key').read_text().strip()
     local_ip_host = local_ip.split('/')[0]
     remote_ip_host = remote_ip.split('/')[0]
 
     return _REMOTE_SETUP_SCRIPT.format(
-        remote_private_key=remote_priv,
         wg_remote_ip=remote_ip,
         wg_port=port,
         wg_network=network,
-        local_public_key=local_pub,
         local_ip_host=local_ip_host,
         remote_ip_host=remote_ip_host,
     )
+
+
+def remote_setup_secret_payload(wg_dir: Path) -> bytes:
+    """Build the stdin payload consumed by the remote setup script."""
+    remote_priv = (wg_dir / 'remote_private.key').read_text().strip()
+    local_pub = (wg_dir / 'local_public.key').read_text().strip()
+    return f"{remote_priv}\n{local_pub}\n".encode()

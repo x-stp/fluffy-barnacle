@@ -27,6 +27,7 @@ from .wg_monitor import monitor_traffic  # noqa: F401
 from .wg_setup import (  # noqa: F401
     _check_root, _run_gh, _ensure_dirs, generate_keys,
     generate_local_config, build_remote_setup_script as _build_remote_setup_script,
+    remote_setup_secret_payload as _remote_setup_secret_payload,
     select_codespace as _select_codespace,
     ensure_codespace_running as _ensure_codespace_running,
 )
@@ -51,6 +52,7 @@ def start_tunnel(config: Config, gh: GitHubManager) -> None:
     """
     logger = get_logger()
     sudo_user = os.environ.get('SUDO_USER') if os.geteuid() == 0 else None
+    runner = gh.runner
 
     _check_root()
 
@@ -91,6 +93,7 @@ def start_tunnel(config: Config, gh: GitHubManager) -> None:
 
     logger.info("Configuring WireGuard in Codespace (this takes ~30 seconds)...")
     script = _build_remote_setup_script(wg_dir)
+    secret_payload = _remote_setup_secret_payload(wg_dir)
 
     # Upload setup script via stdin
     setup_path = '/tmp/setup_wg.sh'
@@ -99,26 +102,31 @@ def start_tunnel(config: Config, gh: GitHubManager) -> None:
     if sudo_user and os.geteuid() == 0:
         gh_cmd = ['sudo', '-u', sudo_user] + gh_cmd
 
-    result = subprocess.run(gh_cmd, input=script.encode(), capture_output=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to copy setup script to codespace: "
-                           f"{result.stderr.decode().strip()}")
+    copy_attempted = False
+    try:
+        copy_attempted = True
+        result = runner.run(gh_cmd, input=script, capture_output=True, text=True, timeout=60)
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to copy setup script to codespace: "
+                               f"{str(result.stderr).strip()}")
 
-    run_cmd = ['gh', 'codespace', 'ssh', '-c', cs_name, '--', setup_path]
-    if sudo_user and os.geteuid() == 0:
-        run_cmd = ['sudo', '-u', sudo_user] + run_cmd
+        run_cmd = ['gh', 'codespace', 'ssh', '-c', cs_name, '--', setup_path]
+        if sudo_user and os.geteuid() == 0:
+            run_cmd = ['sudo', '-u', sudo_user] + run_cmd
 
-    result = subprocess.run(run_cmd)
-    if result.returncode != 0:
-        raise RuntimeError("Failed to run WireGuard setup in codespace")
-
-    # Wipe the setup script immediately after execution to avoid leaving
-    # private keys on the Codespace filesystem.
-    wipe_cmd = ['gh', 'codespace', 'ssh', '-c', cs_name, '--',
-                f'shred -u {shlex.quote(setup_path)} 2>/dev/null || rm -f {shlex.quote(setup_path)}']
-    if sudo_user and os.geteuid() == 0:
-        wipe_cmd = ['sudo', '-u', sudo_user] + wipe_cmd
-    subprocess.run(wipe_cmd, capture_output=True)
+        result = runner.run(run_cmd, input=secret_payload, text=False, timeout=180)
+        if result.returncode != 0:
+            raise RuntimeError("Failed to run WireGuard setup in codespace")
+    finally:
+        if copy_attempted:
+            # Wipe the setup script even when remote execution fails. The key
+            # material is sent over stdin, but the script is still temporary
+            # operational state and should not linger.
+            wipe_cmd = ['gh', 'codespace', 'ssh', '-c', cs_name, '--',
+                        f'shred -u {shlex.quote(setup_path)} 2>/dev/null || rm -f {shlex.quote(setup_path)}']
+            if sudo_user and os.geteuid() == 0:
+                wipe_cmd = ['sudo', '-u', sudo_user] + wipe_cmd
+            runner.run(wipe_cmd, capture_output=True, timeout=30)
 
     time.sleep(2)
 
@@ -126,8 +134,8 @@ def start_tunnel(config: Config, gh: GitHubManager) -> None:
     logger.info("Setting up SSH tunnel for UDP relay...")
 
     # Kill any existing local relay processes
-    subprocess.run(['pkill', '-f', f'socat.*UDP.*{shlex.quote(str(WG_PORT))}'], capture_output=True)
-    subprocess.run(['pkill', '-f', f'socat.*{shlex.quote(str(TCP_RELAY_PORT))}'], capture_output=True)
+    runner.run(['pkill', '-f', f'socat.*UDP.*{shlex.quote(str(WG_PORT))}'], capture_output=True)
+    runner.run(['pkill', '-f', f'socat.*{shlex.quote(str(TCP_RELAY_PORT))}'], capture_output=True)
 
     # Verify remote socat is running
     logger.info("Verifying remote relay...")
@@ -136,7 +144,7 @@ def start_tunnel(config: Config, gh: GitHubManager) -> None:
     if sudo_user and os.geteuid() == 0:
         verify_cmd = ['sudo', '-u', sudo_user] + verify_cmd
 
-    result = subprocess.run(verify_cmd, capture_output=True, text=True)
+    result = runner.run(verify_cmd, capture_output=True, text=True)
     if 'relay running' in result.stdout:
         logger.info("Remote socat relay confirmed")
     else:
@@ -146,14 +154,14 @@ def start_tunnel(config: Config, gh: GitHubManager) -> None:
                            f'UDP:127.0.0.1:{shlex.quote(str(WG_PORT))} > /tmp/socat_relay.log 2>&1 &']
         if sudo_user and os.geteuid() == 0:
             start_socat_cmd = ['sudo', '-u', sudo_user] + start_socat_cmd
-        subprocess.run(start_socat_cmd, capture_output=True)
+        runner.run(start_socat_cmd, capture_output=True)
         time.sleep(2)
 
     time.sleep(1)
 
     # Check if SSH tunnel port forward is already active
     logger.info("Starting SSH tunnel with port forward...")
-    result = subprocess.run(['ss', '-tln'], capture_output=True, text=True)
+    result = runner.run(['ss', '-tln'], capture_output=True, text=True)
     if f':{TCP_RELAY_PORT}' in result.stdout:
         logger.info(f"SSH tunnel already running on port {TCP_RELAY_PORT}")
     else:
@@ -167,7 +175,7 @@ def start_tunnel(config: Config, gh: GitHubManager) -> None:
         print()
         input("Then press Enter to continue...")
 
-        result = subprocess.run(['ss', '-tln'], capture_output=True, text=True)
+        result = runner.run(['ss', '-tln'], capture_output=True, text=True)
         if f':{TCP_RELAY_PORT}' not in result.stdout:
             raise RuntimeError("SSH tunnel still not running. Please start it first.")
         logger.info("SSH tunnel detected")
@@ -185,11 +193,11 @@ def start_tunnel(config: Config, gh: GitHubManager) -> None:
     # Phase 5: Bring up local WireGuard interface
     logger.info("Bringing up local WireGuard interface...")
 
-    subprocess.run(['ip', 'link', 'del', WG_INTERFACE], capture_output=True)
-    subprocess.run(['ip', 'link', 'add', WG_INTERFACE, 'type', 'wireguard'], check=True)
+    runner.run(['ip', 'link', 'del', WG_INTERFACE], capture_output=True)
+    runner.run(['ip', 'link', 'add', WG_INTERFACE, 'type', 'wireguard'], check=True)
 
     remote_pub = (wg_dir / 'remote_public.key').read_text().strip()
-    subprocess.run([
+    runner.run([
         'wg', 'set', WG_INTERFACE,
         'private-key', str(wg_dir / 'local_private.key'),
         'peer', remote_pub,
@@ -198,14 +206,14 @@ def start_tunnel(config: Config, gh: GitHubManager) -> None:
         'persistent-keepalive', '25',
     ], check=True)
 
-    subprocess.run(['ip', 'addr', 'add', WG_LOCAL_IP, 'dev', WG_INTERFACE], check=True)
-    subprocess.run(['ip', 'link', 'set', WG_INTERFACE, 'up'], check=True)
+    runner.run(['ip', 'addr', 'add', WG_LOCAL_IP, 'dev', WG_INTERFACE], check=True)
+    runner.run(['ip', 'link', 'set', WG_INTERFACE, 'up'], check=True)
     time.sleep(2)
 
     # Phase 6: Test connectivity
     remote_host = WG_REMOTE_IP.split('/')[0]
     logger.info("Testing tunnel connectivity...")
-    result = subprocess.run(['ping', '-c', '1', '-W', '3', remote_host], capture_output=True)
+    result = runner.run(['ping', '-c', '1', '-W', '3', remote_host], capture_output=True, timeout=10)
     if result.returncode == 0:
         logger.info("Tunnel is UP and working!")
     else:
@@ -222,6 +230,7 @@ def stop_tunnel(config: Config, gh: GitHubManager) -> None:
     Equivalent to stop_tunnel() in cs-wg.sh.
     """
     logger = get_logger()
+    runner = gh.runner
 
     # Load saved codespace name if not in config
     cs_name = config.codespace_name or os.environ.get('CODESPACE_NAME', '')
@@ -239,16 +248,16 @@ def stop_tunnel(config: Config, gh: GitHubManager) -> None:
     logger.info("Stopping WireGuard tunnel and cleaning up...")
 
     # Restore routing if modified
-    result = subprocess.run(['ip', 'route'], capture_output=True, text=True)
+    result = runner.run(['ip', 'route'], capture_output=True, text=True)
     if f'0.0.0.0/1.*{WG_INTERFACE}' in result.stdout or \
        re.search(rf'0\.0\.0\.0/1.*{re.escape(WG_INTERFACE)}', result.stdout):
         logger.info("Restoring routing...")
-        subprocess.run(['ip', 'route', 'del', '0.0.0.0/1', 'dev', WG_INTERFACE],
-                       capture_output=True)
-        subprocess.run(['ip', 'route', 'del', '128.0.0.0/1', 'dev', WG_INTERFACE],
-                       capture_output=True)
+        runner.run(['ip', 'route', 'del', '0.0.0.0/1', 'dev', WG_INTERFACE],
+                   capture_output=True)
+        runner.run(['ip', 'route', 'del', '128.0.0.0/1', 'dev', WG_INTERFACE],
+                   capture_output=True)
         for cidr in _BYPASS_ROUTES:
-            subprocess.run(['ip', 'route', 'del', cidr], capture_output=True)
+            runner.run(['ip', 'route', 'del', cidr], capture_output=True)
 
     # Restore DNS if backed up
     wg_dir = config.config_dir / 'wireguard'
@@ -263,12 +272,12 @@ def stop_tunnel(config: Config, gh: GitHubManager) -> None:
             logger.warning(f"Could not restore DNS: {e}")
 
     # Remove WireGuard interface
-    result = subprocess.run(['ip', 'link', 'show', WG_INTERFACE], capture_output=True)
+    result = runner.run(['ip', 'link', 'show', WG_INTERFACE], capture_output=True)
     if result.returncode == 0:
         if os.geteuid() != 0:
             logger.warning(f"Need root to fully clean up. Run: sudo cs-wg down")
         else:
-            subprocess.run(['ip', 'link', 'del', WG_INTERFACE], capture_output=True)
+            runner.run(['ip', 'link', 'del', WG_INTERFACE], capture_output=True)
             logger.info(f"Removed {WG_INTERFACE} interface")
 
     # Stop local socat
@@ -282,9 +291,9 @@ def stop_tunnel(config: Config, gh: GitHubManager) -> None:
         except (OSError, ValueError):
             pass
         socat_pid_file.unlink(missing_ok=True)
-    subprocess.run(['pkill', '-f', f'socat.*UDP.*{shlex.quote(str(WG_PORT))}'], capture_output=True)
-    subprocess.run(['pkill', '-f', f'socat.*{shlex.quote(str(WG_PORT))}'], capture_output=True)
-    subprocess.run(['pkill', '-f', f'socat.*{shlex.quote(str(TCP_RELAY_PORT))}'], capture_output=True)
+    runner.run(['pkill', '-f', f'socat.*UDP.*{shlex.quote(str(WG_PORT))}'], capture_output=True)
+    runner.run(['pkill', '-f', f'socat.*{shlex.quote(str(WG_PORT))}'], capture_output=True)
+    runner.run(['pkill', '-f', f'socat.*{shlex.quote(str(TCP_RELAY_PORT))}'], capture_output=True)
 
     # Stop SSH tunnel
     logger.info("Stopping SSH tunnel...")
@@ -297,9 +306,9 @@ def stop_tunnel(config: Config, gh: GitHubManager) -> None:
         except (OSError, ValueError):
             pass
         ssh_pid_file.unlink(missing_ok=True)
-    subprocess.run(['pkill', '-f', 'gh.*codespace.*ssh.*-L'], capture_output=True)
-    subprocess.run(['pkill', '-f', f'ssh.*{shlex.quote(str(TCP_RELAY_PORT))}:127.0.0.1'], capture_output=True)
-    subprocess.run(['fuser', '-k', f'{shlex.quote(str(TCP_RELAY_PORT))}/tcp'], capture_output=True)
+    runner.run(['pkill', '-f', 'gh.*codespace.*ssh.*-L'], capture_output=True)
+    runner.run(['pkill', '-f', f'ssh.*{shlex.quote(str(TCP_RELAY_PORT))}:127.0.0.1'], capture_output=True)
+    runner.run(['fuser', '-k', f'{shlex.quote(str(TCP_RELAY_PORT))}/tcp'], capture_output=True)
 
     # Stop remote WireGuard if codespace accessible
     if cs_name:
@@ -309,7 +318,7 @@ def stop_tunnel(config: Config, gh: GitHubManager) -> None:
                        f'pkill -f socat.*TCP-LISTEN.*{shlex.quote(str(TCP_RELAY_PORT))} 2>/dev/null || true']
         if sudo_user and os.geteuid() == 0:
             cleanup_cmd = ['sudo', '-u', sudo_user] + cleanup_cmd
-        subprocess.run(cleanup_cmd, capture_output=True)
+        runner.run(cleanup_cmd, capture_output=True, timeout=60)
 
     # Clean up state files
     cs_file = config.config_dir / 'current_codespace'
@@ -330,6 +339,7 @@ def show_status(config: Config, gh: GitHubManager) -> None:
     Equivalent to show_status() in cs-wg.sh.
     """
     # Load saved codespace name
+    runner = gh.runner
     cs_name = config.codespace_name or os.environ.get('CODESPACE_NAME', '')
     if not cs_name:
         cs_file = config.config_dir / 'current_codespace'
@@ -343,10 +353,10 @@ def show_status(config: Config, gh: GitHubManager) -> None:
     print(f"\n=== cs-wg Status ===\n")
 
     # Check interface
-    result = subprocess.run(['ip', 'link', 'show', WG_INTERFACE], capture_output=True)
+    result = runner.run(['ip', 'link', 'show', WG_INTERFACE], capture_output=True)
     if result.returncode == 0:
         print(f"Interface:       {WG_INTERFACE} UP")
-        result2 = subprocess.run(['wg', 'show', WG_INTERFACE], capture_output=True, text=True)
+        result2 = runner.run(['wg', 'show', WG_INTERFACE], capture_output=True, text=True)
         if result2.returncode == 0:
             print()
             print(result2.stdout)
@@ -361,18 +371,18 @@ def show_status(config: Config, gh: GitHubManager) -> None:
     print(f"Codespace:       {cs_name or '<not set>'}")
 
     # Test connectivity if interface is up
-    result = subprocess.run(['ip', 'link', 'show', WG_INTERFACE], capture_output=True)
+    result = runner.run(['ip', 'link', 'show', WG_INTERFACE], capture_output=True)
     if result.returncode == 0:
         remote_host = WG_REMOTE_IP.split('/')[0]
         print()
-        result = subprocess.run(['ping', '-c', '1', '-W', '2', remote_host], capture_output=True)
+        result = runner.run(['ping', '-c', '1', '-W', '2', remote_host], capture_output=True, timeout=10)
         if result.returncode == 0:
             print("Tunnel:          CONNECTED")
 
             # Test internet through tunnel
             remote_ip = None
             for url in ['https://api.ipify.org', 'https://ifconfig.me', 'https://icanhazip.com']:
-                result = subprocess.run(
+                result = runner.run(
                     ['curl', '-4', '-s', '--interface', WG_INTERFACE,
                      '--connect-timeout', '5', url],
                     capture_output=True, text=True

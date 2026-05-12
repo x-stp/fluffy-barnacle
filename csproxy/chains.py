@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import argparse
 import os
+import secrets
 import shlex
 import signal
 import socket
 import subprocess
 import textwrap
 import time
-from string import Template
+from pathlib import Path
 from typing import Optional
 
 from .accounts import GitHubAccount
@@ -29,289 +30,15 @@ DEFAULT_HOP1_PORT = 18080
 DEFAULT_HOP2_PORT = 18081
 
 
-EXIT_RELAY_SCRIPT = r"""#!/usr/bin/env python3
-import base64
-import hashlib
-import select
-import socket
-import socketserver
-import struct
-from http.server import BaseHTTPRequestHandler
-
-PORT = $PORT
+RELAYS_DIR = Path(__file__).with_name("relays")
 
 
-def _recvall(sock, n):
-    data = b""
-    while len(data) < n:
-        chunk = sock.recv(n - len(data))
-        if not chunk:
-            raise OSError("socket closed")
-        data += chunk
-    return data
+def _relay_source(name: str) -> str:
+    return (RELAYS_DIR / name).read_text(encoding="utf-8")
 
 
-def read_frame(sock):
-    first = _recvall(sock, 2)
-    opcode = first[0] & 0x0F
-    masked = bool(first[1] & 0x80)
-    length = first[1] & 0x7F
-    if length == 126:
-        length = struct.unpack("!H", _recvall(sock, 2))[0]
-    elif length == 127:
-        length = struct.unpack("!Q", _recvall(sock, 8))[0]
-    mask = _recvall(sock, 4) if masked else b""
-    payload = _recvall(sock, length) if length else b""
-    if masked:
-        payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
-    return opcode, payload
-
-
-def send_frame(sock, payload, opcode=2):
-    header = bytearray([0x80 | opcode])
-    length = len(payload)
-    if length < 126:
-        header.append(length)
-    elif length < 65536:
-        header.append(126)
-        header.extend(struct.pack("!H", length))
-    else:
-        header.append(127)
-        header.extend(struct.pack("!Q", length))
-    sock.sendall(header + payload)
-
-
-class WebSocketConnectHandler(BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
-
-    def log_message(self, fmt, *args):
-        print("[exit] " + fmt % args, flush=True)
-
-    def do_GET(self):
-        if self.headers.get("Upgrade", "").lower() != "websocket":
-            self.send_error(426, "WebSocket upgrade required")
-            return
-        key = self.headers.get("Sec-WebSocket-Key", "")
-        accept = base64.b64encode(
-            hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()
-        ).decode()
-        self.connection.sendall(
-            (
-                "HTTP/1.1 101 Switching Protocols\r\n"
-                "Upgrade: websocket\r\n"
-                "Connection: Upgrade\r\n"
-                f"Sec-WebSocket-Accept: {accept}\r\n\r\n"
-            ).encode()
-        )
-
-        try:
-            opcode, target = read_frame(self.connection)
-            if opcode == 8:
-                return
-            host, port_s = target.decode().rsplit(":", 1)
-            upstream = socket.create_connection((host, int(port_s)), timeout=15)
-        except Exception as exc:
-            print(f"[exit] connect failed: {exc}", flush=True)
-            try:
-                send_frame(self.connection, str(exc).encode(), opcode=8)
-            except OSError:
-                pass
-            return
-
-        self._pump(self.connection, upstream)
-
-    def _pump(self, ws_sock, upstream):
-        sockets = [ws_sock, upstream]
-        upstream.setblocking(False)
-        while True:
-            readable, _, errored = select.select(sockets, [], sockets, 60)
-            if errored or not readable:
-                break
-            for sock in readable:
-                if sock is ws_sock:
-                    try:
-                        opcode, data = read_frame(ws_sock)
-                    except OSError:
-                        return
-                    if opcode == 8 or not data:
-                        return
-                    upstream.sendall(data)
-                else:
-                    try:
-                        data = upstream.recv(65536)
-                    except OSError:
-                        return
-                    if not data:
-                        return
-                    send_frame(ws_sock, data)
-
-
-class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
-    allow_reuse_address = True
-    daemon_threads = True
-
-
-if __name__ == "__main__":
-    with Server(("0.0.0.0", PORT), WebSocketConnectHandler) as server:
-        print(f"websocket exit relay listening on {PORT}", flush=True)
-        server.serve_forever()
-"""
-
-
-SOCKS_RELAY_SCRIPT = r"""#!/usr/bin/env python3
-import base64
-import os
-import select
-import socket
-import socketserver
-import ssl
-import struct
-
-PORT = $PORT
-EXIT_HOST = "$EXIT_HOST"
-
-
-def _recvall(sock, n):
-    data = b""
-    while len(data) < n:
-        chunk = sock.recv(n - len(data))
-        if not chunk:
-            raise OSError("socket closed")
-        data += chunk
-    return data
-
-
-def read_frame(sock):
-    first = _recvall(sock, 2)
-    opcode = first[0] & 0x0F
-    masked = bool(first[1] & 0x80)
-    length = first[1] & 0x7F
-    if length == 126:
-        length = struct.unpack("!H", _recvall(sock, 2))[0]
-    elif length == 127:
-        length = struct.unpack("!Q", _recvall(sock, 8))[0]
-    mask = _recvall(sock, 4) if masked else b""
-    payload = _recvall(sock, length) if length else b""
-    if masked:
-        payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
-    return opcode, payload
-
-
-def send_frame(sock, payload, opcode=2, mask=True):
-    header = bytearray([0x80 | opcode])
-    length = len(payload)
-    mask_bit = 0x80 if mask else 0
-    if length < 126:
-        header.append(mask_bit | length)
-    elif length < 65536:
-        header.append(mask_bit | 126)
-        header.extend(struct.pack("!H", length))
-    else:
-        header.append(mask_bit | 127)
-        header.extend(struct.pack("!Q", length))
-    if mask:
-        key = os.urandom(4)
-        header.extend(key)
-        payload = bytes(b ^ key[i % 4] for i, b in enumerate(payload))
-    sock.sendall(header + payload)
-
-
-def open_exit_socket(target_host, target_port):
-    raw = socket.create_connection((EXIT_HOST, 443), timeout=20)
-    ws = ssl.create_default_context().wrap_socket(raw, server_hostname=EXIT_HOST)
-    key = base64.b64encode(os.urandom(16)).decode()
-    req = (
-        "GET / HTTP/1.1\r\n"
-        f"Host: {EXIT_HOST}\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
-        f"Sec-WebSocket-Key: {key}\r\n"
-        "Sec-WebSocket-Version: 13\r\n\r\n"
-    )
-    ws.sendall(req.encode())
-    response = b""
-    while b"\r\n\r\n" not in response:
-        response += ws.recv(4096)
-        if len(response) > 65536:
-            raise OSError("oversized websocket response")
-    if b" 101 " not in response.split(b"\r\n", 1)[0]:
-        raise OSError(response.split(b"\r\n", 1)[0].decode(errors="replace"))
-    send_frame(ws, f"{target_host}:{target_port}".encode())
-    return ws
-
-
-class SocksHandler(socketserver.BaseRequestHandler):
-    def handle(self):
-        client = self.request
-        try:
-            if client.recv(1) != b"\x05":
-                return
-            nmethods = client.recv(1)[0]
-            client.recv(nmethods)
-            client.sendall(b"\x05\x00")
-
-            header = client.recv(4)
-            if len(header) != 4 or header[1] != 1:
-                return
-            atyp = header[3]
-            if atyp == 1:
-                target_host = socket.inet_ntoa(client.recv(4))
-            elif atyp == 3:
-                ln = client.recv(1)[0]
-                target_host = client.recv(ln).decode()
-            elif atyp == 4:
-                target_host = socket.inet_ntop(socket.AF_INET6, client.recv(16))
-            else:
-                return
-            target_port = struct.unpack("!H", client.recv(2))[0]
-
-            upstream = open_exit_socket(target_host, target_port)
-
-            client.sendall(b"\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00")
-            self._pump(client, upstream)
-        except Exception as exc:
-            print(f"[socks] {exc}", flush=True)
-            try:
-                client.sendall(b"\x05\x01\x00\x01\x00\x00\x00\x00\x00\x00")
-            except OSError:
-                pass
-
-    def _pump(self, client, ws_sock):
-        sockets = [client, ws_sock]
-        client.setblocking(False)
-        while True:
-            readable, _, errored = select.select(sockets, [], sockets, 60)
-            if errored or not readable:
-                break
-            for sock in readable:
-                if sock is client:
-                    try:
-                        data = client.recv(65536)
-                    except OSError:
-                        return
-                    if not data:
-                        return
-                    send_frame(ws_sock, data)
-                else:
-                    try:
-                        opcode, data = read_frame(ws_sock)
-                    except OSError:
-                        return
-                    if opcode == 8 or not data:
-                        return
-                    client.sendall(data)
-
-
-class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
-    allow_reuse_address = True
-    daemon_threads = True
-
-
-if __name__ == "__main__":
-    with Server(("0.0.0.0", PORT), SocksHandler) as server:
-        print(f"socks relay listening on {PORT}, websocket exit={EXIT_HOST}", flush=True)
-        server.serve_forever()
-"""
+EXIT_RELAY_SCRIPT = _relay_source("exit_relay.py")
+SOCKS_RELAY_SCRIPT = _relay_source("socks_relay.py")
 
 
 def _chains(config: Config) -> dict:
@@ -324,6 +51,15 @@ def _chain(config: Config, name: str) -> dict:
     if not isinstance(chain, dict):
         raise ValueError(f"Unknown chain: {name}")
     return chain
+
+
+def _chain_secret(chain: dict) -> str:
+    """Return the per-chain relay secret, creating one for older configs."""
+    secret = str(chain.get("relay_secret") or "")
+    if not secret:
+        secret = secrets.token_urlsafe(32)
+        chain["relay_secret"] = secret
+    return secret
 
 
 def parse_hop_spec(spec: str) -> dict:
@@ -389,9 +125,19 @@ def _upload(gh: GitHubManager, codespace: str, remote_path: str, content: str) -
         raise RuntimeError(result.stderr.strip() or f"Failed to upload {remote_path}")
 
 
-def _start_remote_script(gh: GitHubManager, codespace: str, script_path: str, label: str) -> None:
+def _start_remote_script(
+    gh: GitHubManager,
+    codespace: str,
+    script_path: str,
+    label: str,
+    *,
+    env: Optional[dict[str, str]] = None,
+) -> None:
     quoted = shlex.quote(script_path)
-    cmd = f"nohup python3 {quoted} > {quoted}.log 2>&1 &"
+    env_prefix = ""
+    if env:
+        env_prefix = " ".join(f"{key}={shlex.quote(value)}" for key, value in env.items()) + " "
+    cmd = f"{env_prefix}nohup python3 {quoted} > {quoted}.log 2>&1 &"
     result = _ssh(gh, codespace, cmd, timeout=30)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or f"Failed to start {script_path}")
@@ -411,6 +157,71 @@ def _wait_local_forward(port: int, process: subprocess.Popen, label: str, timeou
     raise RuntimeError(f"Timed out waiting for {label} on 127.0.0.1:{port}")
 
 
+def _terminate_process(process: Optional[subprocess.Popen]) -> None:
+    """Best-effort termination for local gh port-forward processes."""
+    if process is None or process.poll() is not None:
+        return
+    try:
+        process.terminate()
+        process.wait(timeout=3)
+    except (OSError, subprocess.TimeoutExpired):
+        try:
+            process.kill()
+        except OSError:
+            pass
+
+
+def _cleanup_remote_script(gh: GitHubManager, codespace: str, script_path: str) -> None:
+    """Best-effort cleanup for uploaded chain scripts and logs."""
+    if not codespace or not script_path:
+        return
+    quoted = shlex.quote(script_path)
+    process_pattern = script_path
+    if process_pattern.startswith("/"):
+        process_pattern = "[/]" + process_pattern[1:]
+    process_pattern = shlex.quote(f"[p]ython3 .*{process_pattern}")
+    try:
+        _ssh(
+            gh,
+            codespace,
+            "for pid in $(pgrep -f "
+            f"{process_pattern} 2>/dev/null); do kill \"$pid\" 2>/dev/null || true; done; "
+            f"rm -f {quoted} {quoted}.log",
+            timeout=10,
+        )
+    except Exception:
+        pass
+
+
+def _upload_secret_file(gh: GitHubManager, codespace: str, remote_path: str, secret: str) -> None:
+    _upload(gh, codespace, remote_path, secret + "\n")
+    result = _ssh(gh, codespace, f"chmod 600 {shlex.quote(remote_path)}", timeout=10)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f"Failed to secure {remote_path}")
+
+
+def _cleanup_remote_file(gh: GitHubManager, codespace: str, remote_path: str) -> None:
+    if not codespace or not remote_path:
+        return
+    try:
+        _ssh(gh, codespace, f"rm -f {shlex.quote(remote_path)}", timeout=10)
+    except Exception:
+        pass
+
+
+def _set_port_private(gh: GitHubManager, codespace: str, port: int) -> None:
+    """Best-effort reset for public chain relay ports."""
+    if not codespace or not port:
+        return
+    try:
+        gh.run_gh_command(
+            ["codespace", "ports", "visibility", f"{port}:private", "--codespace", codespace],
+            check=False,
+        )
+    except Exception:
+        pass
+
+
 def _ensure_chain_hops(chain: dict, config: Config, gh: GitHubManager) -> list[dict]:
     hops = list(chain.get("hops", []))
     for idx, hop in enumerate(hops):
@@ -428,93 +239,89 @@ def _ensure_chain_hops(chain: dict, config: Config, gh: GitHubManager) -> list[d
     return hops
 
 
-def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
-    """Manage two-hop Codespaces proxy chains."""
-    parser = argparse.ArgumentParser(prog="cs-proxy chain")
-    sub = parser.add_subparsers(dest="action", required=True)
-
-    p_create = sub.add_parser("create", help="Create a two-hop chain definition")
-    p_create.add_argument("name")
-    p_create.add_argument("--hop", action="append", required=True, metavar="REGION|ACCOUNT:REGION")
-
-    p_start = sub.add_parser("start", help="Start a chain")
-    p_start.add_argument("name")
-    p_start.add_argument("--port", type=int, default=None)
-
-    p_status = sub.add_parser("status", help="Show chain status")
-    p_status.add_argument("name", nargs="?")
-
-    p_stop = sub.add_parser("stop", help="Stop a chain")
-    p_stop.add_argument("name")
-
-    parsed = parser.parse_args(args)
+def _cmd_chain_create(parsed, config: Config) -> int:
     logger = get_logger()
+    if len(parsed.hop) != 2:
+        raise ValueError("Exactly two --hop values are required")
+    chains = _chains(config)
+    chains[parsed.name] = {
+        "name": parsed.name,
+        "hops": [parse_hop_spec(parsed.hop[0]), parse_hop_spec(parsed.hop[1])],
+        "hop1_port": DEFAULT_HOP1_PORT,
+        "hop2_port": DEFAULT_HOP2_PORT,
+        "relay_secret": secrets.token_urlsafe(32),
+    }
+    config.set("chains", chains)
+    config.save()
+    logger.info(f"Created chain: {parsed.name}")
+    return 0
 
-    if parsed.action == "create":
-        if len(parsed.hop) != 2:
-            raise ValueError("Exactly two --hop values are required")
-        chains = _chains(config)
-        chains[parsed.name] = {
-            "name": parsed.name,
-            "hops": [parse_hop_spec(parsed.hop[0]), parse_hop_spec(parsed.hop[1])],
-            "hop1_port": DEFAULT_HOP1_PORT,
-            "hop2_port": DEFAULT_HOP2_PORT,
-        }
-        config.set("chains", chains)
-        config.save()
-        logger.info(f"Created chain: {parsed.name}")
+
+def _cmd_chain_status(parsed, config: Config) -> int:
+    state = State(config.config_dir)
+    entries = state.get_tunnels(kind="chain")
+    if parsed.name:
+        entries = [e for e in entries if e.get("name") == parsed.name]
+    if not entries:
+        print("No running chains.")
         return 0
+    for entry in entries:
+        print(f"{entry.get('name')}: {entry.get('status')} local=:{entry.get('local_port')}")
+        for hop in entry.get("hops", []):
+            print(f"  - {hop.get('codespace_name')} {hop.get('location', '')}")
+    return 0
 
-    if parsed.action == "status":
-        state = State(config.config_dir)
-        entries = state.get_tunnels(kind="chain")
-        if parsed.name:
-            entries = [e for e in entries if e.get("name") == parsed.name]
-        if not entries:
-            print("No running chains.")
-            return 0
-        for entry in entries:
-            print(f"{entry.get('name')}: {entry.get('status')} local=:{entry.get('local_port')}")
-            for hop in entry.get("hops", []):
-                print(f"  - {hop.get('codespace_name')} {hop.get('location', '')}")
-        return 0
 
+def _persist_chain(config: Config, name: str, chain: dict) -> None:
+    chains = _chains(config)
+    chains[name] = chain
+    config.set("chains", chains)
+    config.save()
+
+
+def _cmd_chain_start(parsed, config: Config, gh: GitHubManager) -> int:
+    logger = get_logger()
     chain = _chain(config, parsed.name)
+    if getattr(config, "_dry_run", False):
+        print(f"[dry-run] Would start chain {parsed.name}")
+        return 0
 
-    if parsed.action == "start":
-        if getattr(config, "_dry_run", False):
-            print(f"[dry-run] Would start chain {parsed.name}")
-            return 0
+    hops = _ensure_chain_hops(chain, config, gh)
+    if len(hops) != 2:
+        raise ValueError("Chains must have exactly two hops")
 
-        hops = _ensure_chain_hops(chain, config, gh)
-        if len(hops) != 2:
-            raise ValueError("Chains must have exactly two hops")
+    hop1, hop2 = hops
+    hop1_gh = _manager_for_hop(hop1, config, gh)
+    hop2_gh = _manager_for_hop(hop2, config, gh)
+    hop1_name = hop1["codespace_name"]
+    hop2_name = hop2["codespace_name"]
+    hop1_port = int(chain.get("hop1_port", DEFAULT_HOP1_PORT))
+    hop2_port = int(chain.get("hop2_port", DEFAULT_HOP2_PORT))
+    local_port = parsed.port or config.socks_port
+    exit_host = f"{hop2_name}-{hop2_port}.app.github.dev"
+    relay_secret = _chain_secret(chain)
+    _persist_chain(config, parsed.name, chain)
 
-        chains = _chains(config)
-        chains[parsed.name] = chain
-        config.set("chains", chains)
-        config.save()
+    exit_path = f"/tmp/csproxy_chain_exit_{hop2_port}.py"
+    socks_path = f"/tmp/csproxy_chain_socks_{hop1_port}.py"
+    exit_secret_path = f"/tmp/csproxy_chain_exit_{hop2_port}.secret"
+    socks_secret_path = f"/tmp/csproxy_chain_socks_{hop1_port}.secret"
+    fwd: Optional[subprocess.Popen] = None
+    exit_fwd: Optional[subprocess.Popen] = None
 
-        hop1, hop2 = hops
-        hop1_gh = _manager_for_hop(hop1, config, gh)
-        hop2_gh = _manager_for_hop(hop2, config, gh)
-        hop1_name = hop1["codespace_name"]
-        hop2_name = hop2["codespace_name"]
-        hop1_port = int(chain.get("hop1_port", DEFAULT_HOP1_PORT))
-        hop2_port = int(chain.get("hop2_port", DEFAULT_HOP2_PORT))
-        local_port = parsed.port or config.socks_port
-        exit_host = f"{hop2_name}-{hop2_port}.app.github.dev"
-
-        exit_script = Template(EXIT_RELAY_SCRIPT).substitute(PORT=hop2_port)
-        socks_script = Template(SOCKS_RELAY_SCRIPT).substitute(
-            PORT=hop1_port,
-            EXIT_HOST=exit_host,
+    try:
+        _upload(hop2_gh, hop2_name, exit_path, EXIT_RELAY_SCRIPT)
+        _upload_secret_file(hop2_gh, hop2_name, exit_secret_path, relay_secret)
+        _start_remote_script(
+            hop2_gh,
+            hop2_name,
+            exit_path,
+            f"csproxy_chain_exit_{hop2_port}",
+            env={
+                "CS_PROXY_RELAY_PORT": str(hop2_port),
+                "CS_PROXY_RELAY_SECRET_FILE": exit_secret_path,
+            },
         )
-        exit_path = f"/tmp/csproxy_chain_exit_{hop2_port}.py"
-        socks_path = f"/tmp/csproxy_chain_socks_{hop1_port}.py"
-
-        _upload(hop2_gh, hop2_name, exit_path, exit_script)
-        _start_remote_script(hop2_gh, hop2_name, exit_path, f"csproxy_chain_exit_{hop2_port}")
         exit_fwd = subprocess.Popen(
             [
                 "gh",
@@ -536,8 +343,19 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
             check=False,
         )
 
-        _upload(hop1_gh, hop1_name, socks_path, socks_script)
-        _start_remote_script(hop1_gh, hop1_name, socks_path, f"csproxy_chain_socks_{hop1_port}")
+        _upload(hop1_gh, hop1_name, socks_path, SOCKS_RELAY_SCRIPT)
+        _upload_secret_file(hop1_gh, hop1_name, socks_secret_path, relay_secret)
+        _start_remote_script(
+            hop1_gh,
+            hop1_name,
+            socks_path,
+            f"csproxy_chain_socks_{hop1_port}",
+            env={
+                "CS_PROXY_RELAY_PORT": str(hop1_port),
+                "CS_PROXY_RELAY_SECRET_FILE": socks_secret_path,
+                "CS_PROXY_EXIT_HOST": exit_host,
+            },
+        )
 
         fwd = subprocess.Popen(
             [
@@ -566,36 +384,89 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
             exit_forward_pid=exit_fwd.pid,
             hops=hops,
             exit_host=exit_host,
+            hop1_port=hop1_port,
+            hop2_port=hop2_port,
             created=int(time.time()),
         )
         logger.info(f"Chain {parsed.name} started: socks5://127.0.0.1:{local_port}")
         logger.info(f"Exit relay: https://{exit_host}/")
         return 0
+    except Exception:
+        _terminate_process(fwd)
+        _terminate_process(exit_fwd)
+        _cleanup_remote_script(hop1_gh, hop1_name, socks_path)
+        _cleanup_remote_script(hop2_gh, hop2_name, exit_path)
+        _cleanup_remote_file(hop1_gh, hop1_name, socks_secret_path)
+        _cleanup_remote_file(hop2_gh, hop2_name, exit_secret_path)
+        _set_port_private(hop1_gh, hop1_name, hop1_port)
+        _set_port_private(hop2_gh, hop2_name, hop2_port)
+        State(config.config_dir).remove_tunnel(tunnel_id=f"chain-{parsed.name}")
+        raise
 
-    if parsed.action == "stop":
-        state = State(config.config_dir)
-        entry = next((e for e in state.get_tunnels(kind="chain") if e.get("name") == parsed.name), None)
-        if not entry:
-            logger.warning(f"Chain not running: {parsed.name}")
-            return 0
-        pid = entry.get("pid")
-        for pid in (entry.get("pid"), entry.get("exit_forward_pid")):
-            if not pid:
-                continue
-            try:
-                os.kill(int(pid), signal.SIGTERM)
-            except (OSError, ValueError):
-                pass
-        for hop in entry.get("hops", []):
-            name = hop.get("codespace_name")
-            if name:
-                hop_gh = _manager_for_hop(hop, config, gh)
-                _ssh(hop_gh, name, "pkill -f csproxy_chain_ 2>/dev/null || true", timeout=10)
-        state.remove_tunnel(tunnel_id=f"chain-{parsed.name}")
-        logger.info(f"Stopped chain: {parsed.name}")
+
+def _cmd_chain_stop(parsed, config: Config, gh: GitHubManager) -> int:
+    logger = get_logger()
+    state = State(config.config_dir)
+    entry = next((e for e in state.get_tunnels(kind="chain") if e.get("name") == parsed.name), None)
+    if not entry:
+        logger.warning(f"Chain not running: {parsed.name}")
         return 0
+    for pid in (entry.get("pid"), entry.get("exit_forward_pid")):
+        if not pid:
+            continue
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+        except (OSError, ValueError):
+            pass
+    for hop_idx, hop in enumerate(entry.get("hops", [])):
+        name = hop.get("codespace_name")
+        if name:
+            hop_gh = _manager_for_hop(hop, config, gh)
+            port = int(
+                entry.get("hop1_port" if hop_idx == 0 else "hop2_port")
+                or (DEFAULT_HOP1_PORT if hop_idx == 0 else DEFAULT_HOP2_PORT)
+            )
+            _ssh(
+                hop_gh,
+                name,
+                "for pid in $(pgrep -f '[p]ython3 .*[/]tmp/csproxy_chain_' 2>/dev/null); "
+                "do kill \"$pid\" 2>/dev/null || true; done; "
+                "rm -f /tmp/csproxy_chain_*",
+                timeout=10,
+            )
+            _set_port_private(hop_gh, name, port)
+    state.remove_tunnel(tunnel_id=f"chain-{parsed.name}")
+    logger.info(f"Stopped chain: {parsed.name}")
+    return 0
 
-    return 1
+
+def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
+    """Manage two-hop Codespaces proxy chains."""
+    parser = argparse.ArgumentParser(prog="cs-proxy chain")
+    sub = parser.add_subparsers(dest="action", required=True)
+
+    p_create = sub.add_parser("create", help="Create a two-hop chain definition")
+    p_create.add_argument("name")
+    p_create.add_argument("--hop", action="append", required=True, metavar="REGION|ACCOUNT:REGION")
+
+    p_start = sub.add_parser("start", help="Start a chain")
+    p_start.add_argument("name")
+    p_start.add_argument("--port", type=int, default=None)
+
+    p_status = sub.add_parser("status", help="Show chain status")
+    p_status.add_argument("name", nargs="?")
+
+    p_stop = sub.add_parser("stop", help="Stop a chain")
+    p_stop.add_argument("name")
+
+    parsed = parser.parse_args(args)
+    handlers = {
+        "create": lambda: _cmd_chain_create(parsed, config),
+        "status": lambda: _cmd_chain_status(parsed, config),
+        "start": lambda: _cmd_chain_start(parsed, config, gh),
+        "stop": lambda: _cmd_chain_stop(parsed, config, gh),
+    }
+    return handlers[parsed.action]()
 
 
 def chain_help() -> str:

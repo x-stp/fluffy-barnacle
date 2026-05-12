@@ -35,6 +35,27 @@ def test_command_runner_merges_env(monkeypatch):
     assert env["CALL"] == "3"
 
 
+def test_command_runner_allows_explicit_no_timeout():
+    from csproxy.runner import CommandRunner
+
+    runner = CommandRunner()
+
+    with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0)) as mock_run:
+        runner.run(["tail", "-f", "log"], timeout=None, capture_output=False)
+
+    assert mock_run.call_args.kwargs["timeout"] is None
+
+
+def test_command_runner_redacts_sensitive_command_and_env():
+    from csproxy.runner import CommandRunner
+
+    runner = CommandRunner(redacted_values=("github_pat_secret",))
+
+    assert "github_pat_secret" not in runner._display_cmd(["gh", "api", "github_pat_secret"])
+    assert "TOKEN=***" in runner._display_env({"TOKEN": "github_pat_secret"})
+    assert "github_pat_secret" not in runner._display_env({"HEADER": "bearer github_pat_secret"})
+
+
 def test_github_account_loads_from_config(monkeypatch, tmp_path):
     from csproxy.accounts import GitHubAccount
     from csproxy.utils.config import Config
@@ -79,3 +100,15 @@ def test_github_manager_uses_account_token(monkeypatch, tmp_path):
         assert gh.check_auth() is True
 
     assert mock_run.call_args.kwargs["env"]["GH_TOKEN"] == "secret"
+
+
+def test_github_manager_registers_loaded_token_for_redaction(monkeypatch, tmp_path):
+    from csproxy.github import GitHubManager
+    from csproxy.runner import CommandRunner
+
+    runner = CommandRunner()
+    monkeypatch.setenv("GH_TOKEN", "github_pat_loadedsecret")
+    gh = GitHubManager(config_dir=tmp_path, runner=runner)
+
+    assert gh.load_token() == "github_pat_loadedsecret"
+    assert "github_pat_loadedsecret" in runner.redacted_values

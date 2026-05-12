@@ -21,6 +21,42 @@ import sys
 import time
 from pathlib import Path
 
+from .runner import CommandRunner
+
+
+def _write_status(status_file: Path | None, status: str, **fields) -> None:
+    """Write a small status heartbeat for the parent process."""
+    if not status_file:
+        return
+    payload = {
+        "pid": os.getpid(),
+        "status": status,
+        "updated_at": time.time(),
+        **fields,
+    }
+    try:
+        status_file.write_text(json.dumps(payload, sort_keys=True))
+    except OSError:
+        return
+
+
+def _trim_log_file(log_file: Path, max_bytes: int) -> None:
+    """Keep reconnect logs bounded while preserving recent SSH diagnostics."""
+    if max_bytes <= 0 or not log_file.exists():
+        return
+    try:
+        if log_file.stat().st_size <= max_bytes:
+            return
+        keep_bytes = max(max_bytes // 2, 1)
+        with open(log_file, "rb") as fh:
+            fh.seek(-keep_bytes, os.SEEK_END)
+            recent = fh.read()
+        with open(log_file, "wb") as fh:
+            fh.write(b"[csproxy] log truncated; keeping recent output only\n")
+            fh.write(recent)
+    except OSError:
+        return
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(add_help=False)
@@ -45,7 +81,19 @@ def main() -> None:
     stop_file = Path(spec["stop_file"])
     reconnect_delay = spec.get("reconnect_delay", 5)
     max_reconnect_delay = spec.get("max_reconnect_delay", 300)
+    log_max_bytes = int(spec.get("log_max_bytes", 2_000_000))
+    ready_file = Path(spec["ready_file"]) if spec.get("ready_file") else None
+    status_file = Path(spec["status_file"]) if spec.get("status_file") else None
     gh_cmd = spec["gh_cmd"]
+
+    if ready_file:
+        try:
+            ready_file.write_text(str(os.getpid()))
+            _write_status(status_file, "ready", attempt=0)
+        except OSError as e:
+            print(f"Failed to write worker ready file: {e}", file=sys.stderr)
+            _write_status(status_file, "ready_failed", error=str(e))
+            sys.exit(1)
 
     stop_requested = False
 
@@ -70,17 +118,27 @@ def main() -> None:
         attempt += 1
         if debug:
             print(f"[worker] Attempt {attempt}: running gh ssh (delay={delay}s)", file=sys.stderr)
+        _write_status(status_file, "running", attempt=attempt, delay=delay)
 
+        _trim_log_file(log_file, log_max_bytes)
         log_mode = "a" if log_file.exists() else "w"
         try:
             with open(log_file, log_mode) as log_fd:
-                subprocess.run(gh_cmd, stdout=log_fd, stderr=log_fd, timeout=60)
+                CommandRunner().run(
+                    gh_cmd,
+                    stdout=log_fd,
+                    stderr=log_fd,
+                    capture_output=False,
+                    timeout=60,
+                )
         except subprocess.TimeoutExpired:
             if debug:
                 print("[worker] SSH command timed out, reconnecting...", file=sys.stderr)
+            _write_status(status_file, "timeout", attempt=attempt, delay=delay)
         except OSError as e:
             # Log file may have become unavailable (e.g. config dir deleted)
             print(f"[worker] Log file error: {e}", file=sys.stderr)
+            _write_status(status_file, "log_error", attempt=attempt, error=str(e))
             time.sleep(delay)
             delay = min(delay * 2, max_reconnect_delay)
             continue
@@ -102,7 +160,10 @@ def main() -> None:
         print("[worker] Exiting cleanly", file=sys.stderr)
 
     # Clean up spec file to indicate worker exited
+    _write_status(status_file, "exited", attempt=attempt)
     spec_path.unlink(missing_ok=True)
+    if ready_file:
+        ready_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

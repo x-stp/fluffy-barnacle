@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from .runner import CommandRunner
 from .state import State
 from .utils import Config, get_logger
 
@@ -30,6 +31,10 @@ VERSION = "1.0.0"
 
 # Cache for proxy health checks: {(host, port): (timestamp, healthy)}
 _CHECK_CACHE: Dict[Tuple[str, int], Tuple[float, bool]] = {}
+
+
+def _run(cmd: List[str], **kwargs) -> subprocess.CompletedProcess:
+    return CommandRunner().run(cmd, **kwargs)
 
 
 # =============================================================================
@@ -97,7 +102,7 @@ def check_proxy(
                 print("    Start with: cs-proxy start")
             return healthy
 
-    result = subprocess.run(
+    result = _run(
         [
             'curl', '-s', '--connect-timeout', '2',
             '--socks5-hostname', f'{host}:{port}', 'https://ifconfig.me',
@@ -270,8 +275,9 @@ def pcurl(
     port = port or _get_proxy_port(config)
     if not check_proxy(host, port):
         return 1
-    return subprocess.run(
+    return _run(
         ['curl', '--socks5-hostname', f'{host}:{port}'] + args,
+        capture_output=False,
         timeout=timeout,
     ).returncode
 
@@ -302,8 +308,9 @@ def pwget(
     proxychains_conf = config.config_dir / 'proxychains.conf'
     if not check_proxy(host, port):
         return 1
-    return subprocess.run(
+    return _run(
         ['proxychains4', '-q', '-f', str(proxychains_conf), 'wget'] + args,
+        capture_output=False,
         timeout=timeout,
     ).returncode
 
@@ -340,8 +347,9 @@ def pnmap(
     if not check_proxy(host, port):
         return 1
     args = _sanitize_nmap_args(args)
-    return subprocess.run(
+    return _run(
         ['proxychains4', '-q', '-f', str(proxychains_conf), 'nmap'] + args,
+        capture_output=False,
         timeout=timeout,
     ).returncode
 
@@ -372,9 +380,10 @@ def pnuclei(
     if not check_proxy(host, port):
         return 1
     env = _proxy_env(host, port)
-    return subprocess.run(
+    return _run(
         ['nuclei'] + args,
         env=env,
+        capture_output=False,
         timeout=timeout,
     ).returncode
 
@@ -457,8 +466,9 @@ def pffuf(
     if not check_proxy(host, port):
         return 1
     args = _sanitize_ffuf_args(args)
-    return subprocess.run(
+    return _run(
         ['ffuf', '-x', f'socks5://{host}:{port}'] + args,
+        capture_output=False,
         timeout=timeout,
     ).returncode
 
@@ -488,8 +498,9 @@ def phttpx(
     port = port or _get_proxy_port(config)
     if not check_proxy(host, port):
         return 1
-    return subprocess.run(
+    return _run(
         ['httpx', '-proxy', f'socks5://{host}:{port}'] + args,
+        capture_output=False,
         timeout=timeout,
     ).returncode
 
@@ -519,8 +530,9 @@ def psqlmap(
     port = port or _get_proxy_port(config)
     if not check_proxy(host, port):
         return 1
-    return subprocess.run(
+    return _run(
         ['sqlmap', f'--proxy=socks5://{host}:{port}'] + args,
+        capture_output=False,
         timeout=timeout,
     ).returncode
 
@@ -557,8 +569,9 @@ def pcs(
     if args and not shutil.which(args[0]):
         logger.error(f"Command not found: {args[0]}")
         return 127
-    return subprocess.run(
+    return _run(
         ['proxychains4', '-q', '-f', str(proxychains_conf)] + args,
+        capture_output=False,
         timeout=timeout,
     ).returncode
 
@@ -583,7 +596,7 @@ def ipcheck(
     port = port or _get_proxy_port(config)
 
     # Direct IP
-    result = subprocess.run(
+    result = _run(
         ['curl', '-s', '--connect-timeout', '5', 'https://ifconfig.me'],
         capture_output=True,
         text=True,
@@ -592,7 +605,7 @@ def ipcheck(
     direct_ip = result.stdout.strip() if result.returncode == 0 else 'timeout'
 
     # Proxied IP
-    result = subprocess.run(
+    result = _run(
         [
             'curl', '-s', '--connect-timeout', '5',
             '--socks5-hostname', f'{host}:{port}', 'https://ifconfig.me',
@@ -656,9 +669,10 @@ def psub(
         ['subfinder', '-d', domain, '-silent'],
         stdout=subprocess.PIPE,
     )
-    result = subprocess.run(
+    result = _run(
         ['httpx', '-proxy', f'socks5://{host}:{port}', '-silent'],
         stdin=subfinder.stdout,
+        capture_output=False,
         timeout=timeout,
     )
     subfinder.wait()

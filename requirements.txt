@@ -7,6 +7,9 @@ pyyaml>=6.0
 # Cross-platform colored terminal output
 colorama>=0.4.6
 
+# Cross-platform advisory file locks
+portalocker>=2.8
+
 # Optional but recommended dependencies
 # Uncomment if needed:
 # requests>=2.31.0     # HTTP requests (may be needed for some features)

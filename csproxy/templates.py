@@ -254,19 +254,27 @@ sudo apt-get install -y wireguard-tools iptables socat --no-install-recommends 2
 echo "[*] Creating WireGuard config..."
 sudo mkdir -p /etc/wireguard
 
-sudo tee /etc/wireguard/wg0.conf > /dev/null << 'WGCONF'
+IFS= read -r REMOTE_PRIVATE_KEY
+IFS= read -r LOCAL_PUBLIC_KEY
+if [ -z "$REMOTE_PRIVATE_KEY" ] || [ -z "$LOCAL_PUBLIC_KEY" ]; then
+    echo "[!] Missing WireGuard key material on stdin" >&2
+    exit 1
+fi
+
+sudo tee /etc/wireguard/wg0.conf > /dev/null << WGCONF
 [Interface]
-PrivateKey = {remote_private_key}
+PrivateKey = ${{REMOTE_PRIVATE_KEY}}
 Address = {wg_remote_ip}
 ListenPort = {wg_port}
 PostUp = iptables -I FORWARD 1 -i wg0 -o eth0 -j ACCEPT; iptables -I FORWARD 2 -i eth0 -o wg0 -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -A POSTROUTING -s {wg_network} -o eth0 -j MASQUERADE; sysctl -w net.ipv4.ip_forward=1
 PostDown = iptables -D FORWARD -i wg0 -o eth0 -j ACCEPT; iptables -D FORWARD -i eth0 -o wg0 -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -D POSTROUTING -s {wg_network} -o eth0 -j MASQUERADE || true
 
 [Peer]
-PublicKey = {local_public_key}
+PublicKey = ${{LOCAL_PUBLIC_KEY}}
 AllowedIPs = {local_ip_host}/32
 WGCONF
 
+unset REMOTE_PRIVATE_KEY LOCAL_PUBLIC_KEY
 sudo chmod 600 /etc/wireguard/wg0.conf
 
 echo "[*] Stopping any existing WireGuard..."
