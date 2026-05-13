@@ -46,6 +46,14 @@ class GitHubManager:
         self.account = account
         self.runner = runner or CommandRunner()
 
+    def _register_redaction(self, token: str) -> None:
+        """Ensure loaded tokens are never printed by CommandRunner debug logs."""
+        if not token:
+            return
+        existing = [value for value in self.runner.redacted_values if value]
+        if token not in existing:
+            self.runner.redacted_values = tuple([*existing, token])
+
     def load_token(self) -> Optional[str]:
         """
         Load GitHub token from various sources.
@@ -65,12 +73,14 @@ class GitHubManager:
                     f"Using token from ${self.account.token_env} for account {self.account.name}"
                 )
                 self._token = token
+                self._register_redaction(token)
                 return token
 
         token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
         if token:
             self.logger.debug("Using GH_TOKEN from environment")
             self._token = token
+            self._register_redaction(token)
             return token
 
         # Priority 2: Token file
@@ -80,6 +90,7 @@ class GitHubManager:
                 if token:
                     self.logger.debug(f"Using GH_TOKEN from {self.token_file}")
                     self._token = token
+                    self._register_redaction(token)
                     return token
             except (OSError, PermissionError) as e:
                 self.logger.warning(f"Could not read token file {self.token_file}: {e}")
@@ -106,6 +117,7 @@ class GitHubManager:
 
             self.logger.info(f"Saved GitHub token to {self.token_file}")
             self._token = token
+            self._register_redaction(token)
 
         except (OSError, PermissionError) as e:
             raise OSError(f"Could not save token to {self.token_file}: {e}")

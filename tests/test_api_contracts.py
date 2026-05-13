@@ -152,16 +152,18 @@ def test_wireguard_setup_script_renders():
     """WireGuard remote setup script template renders correctly."""
     from csproxy.wireguard import _REMOTE_SETUP_SCRIPT
     rendered = _REMOTE_SETUP_SCRIPT.format(
-        remote_private_key='TEST_KEY=',
         wg_remote_ip='10.99.99.1/24',
         wg_port=51820,
         wg_network='10.99.99.0/24',
-        local_public_key='TEST_PUB=',
         local_ip_host='10.99.99.2',
         remote_ip_host='10.99.99.1',
     )
     assert '#!/usr/bin/env bash' in rendered
-    assert 'TEST_KEY=' in rendered
+    assert 'TEST_KEY=' not in rendered
+    assert 'PrivateKey = ${REMOTE_PRIVATE_KEY}' in rendered
+    assert 'PublicKey = ${LOCAL_PUBLIC_KEY}' in rendered
+    assert '<< WGCONF' in rendered
+    assert "<< 'WGCONF'" not in rendered
 
 
 def test_health_check_uses_socks5_hostname():

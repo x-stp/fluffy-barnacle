@@ -11,6 +11,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from .runner import CommandRunner
 from .utils import Config, get_logger
 from .wg_constants import WG_INTERFACE
 
@@ -38,6 +39,10 @@ _BYPASS_ROUTES = [
 ]
 
 
+def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
+    return CommandRunner().run(cmd, **kwargs)
+
+
 def _check_root() -> None:
     """Raise RuntimeError if not running as root."""
     if os.geteuid() != 0:
@@ -52,7 +57,7 @@ def add_route(target: str, interface: str = WG_INTERFACE) -> None:
         raise ValueError("Usage: cs-wg route add <ip/cidr or domain>")
 
     if not re.match(r'^\d+\.\d+\.\d+\.\d+', target):
-        result = subprocess.run(['dig', '+short', target], capture_output=True, text=True)
+        result = _run(['dig', '+short', target], capture_output=True, text=True)
         ip = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ''
         if not ip:
             raise RuntimeError(f"Could not resolve: {target}")
@@ -62,7 +67,7 @@ def add_route(target: str, interface: str = WG_INTERFACE) -> None:
     if '/' not in target:
         target = f"{target}/32"
 
-    result = subprocess.run(['ip', 'route', 'add', target, 'dev', interface], capture_output=True)
+    result = _run(['ip', 'route', 'add', target, 'dev', interface], capture_output=True)
     if result.returncode != 0:
         logger.warning(f"Route may already exist: {target}")
     else:
@@ -79,7 +84,7 @@ def del_route(target: str, interface: str = WG_INTERFACE) -> None:
     if '/' not in target:
         target = f"{target}/32"
 
-    subprocess.run(['ip', 'route', 'del', target, 'dev', interface], capture_output=True)
+    _run(['ip', 'route', 'del', target, 'dev', interface], capture_output=True)
     logger.info(f"Removed route: {target}")
 
 
@@ -93,7 +98,7 @@ def route_all(config: Config, interface: str = WG_INTERFACE) -> None:
     logger = get_logger()
     _check_root()
 
-    result = subprocess.run(['ip', 'link', 'show', interface], capture_output=True)
+    result = _run(['ip', 'link', 'show', interface], capture_output=True)
     if result.returncode != 0:
         raise RuntimeError(f"WireGuard interface {interface} not found. Run 'cs-wg up' first.")
 
@@ -103,7 +108,7 @@ def route_all(config: Config, interface: str = WG_INTERFACE) -> None:
     if confirm not in ('y', 'yes'):
         return
 
-    result = subprocess.run(['ip', 'route'], capture_output=True, text=True)
+    result = _run(['ip', 'route'], capture_output=True, text=True)
     default_line = next((l for l in result.stdout.splitlines() if l.startswith('default')), '')
     parts = default_line.split()
     try:
@@ -125,32 +130,32 @@ def route_all(config: Config, interface: str = WG_INTERFACE) -> None:
     except OSError:
         pass
 
-    ipv6_result = subprocess.run(['cat', '/proc/sys/net/ipv6/conf/all/disable_ipv6'],
-                                  capture_output=True, text=True)
+    ipv6_result = _run(['cat', '/proc/sys/net/ipv6/conf/all/disable_ipv6'],
+                       capture_output=True, text=True)
     (wg_dir / 'ipv6_state.backup').write_text(ipv6_result.stdout.strip() or '1')
     logger.info("Disabling IPv6 (tunnel is IPv4 only)...")
     for key in ['net.ipv6.conf.all.disable_ipv6', 'net.ipv6.conf.default.disable_ipv6',
                 'net.ipv6.conf.lo.disable_ipv6']:
-        subprocess.run(['sysctl', '-w', f'{key}=1'], capture_output=True)
+        _run(['sysctl', '-w', f'{key}=1'], capture_output=True)
 
     logger.info("Adding bypass routes for GitHub/Azure...")
     for cidr in _BYPASS_ROUTES:
-        subprocess.run(['ip', 'route', 'add', cidr, 'via', default_gw,
-                        'dev', default_dev], capture_output=True)
+        _run(['ip', 'route', 'add', cidr, 'via', default_gw,
+              'dev', default_dev], capture_output=True)
 
-    kernel_result = subprocess.run(['ip', 'route'], capture_output=True, text=True)
+    kernel_result = _run(['ip', 'route'], capture_output=True, text=True)
     for line in kernel_result.stdout.splitlines():
         if 'proto kernel' in line and default_dev in line:
             local_net = line.split()[0]
             if local_net and local_net != 'default':
                 logger.info(f"Preserving local network: {local_net}")
-                subprocess.run(['ip', 'route', 'add', local_net, 'via', default_gw,
-                                'dev', default_dev], capture_output=True)
+                _run(['ip', 'route', 'add', local_net, 'via', default_gw,
+                      'dev', default_dev], capture_output=True)
             break
 
     logger.info("Routing all traffic through tunnel...")
-    subprocess.run(['ip', 'route', 'add', '0.0.0.0/1', 'dev', interface], check=True)
-    subprocess.run(['ip', 'route', 'add', '128.0.0.0/1', 'dev', interface], check=True)
+    _run(['ip', 'route', 'add', '0.0.0.0/1', 'dev', interface], check=True)
+    _run(['ip', 'route', 'add', '128.0.0.0/1', 'dev', interface], check=True)
 
     logger.info("Setting DNS to use tunnel...")
     Path('/etc/resolv.conf').write_text("nameserver 1.1.1.1\nnameserver 8.8.8.8\n")
@@ -167,11 +172,11 @@ def route_restore(config: Config, interface: str = WG_INTERFACE) -> None:
 
     logger.info("Restoring default routing...")
 
-    subprocess.run(['ip', 'route', 'del', '0.0.0.0/1', 'dev', interface], capture_output=True)
-    subprocess.run(['ip', 'route', 'del', '128.0.0.0/1', 'dev', interface], capture_output=True)
+    _run(['ip', 'route', 'del', '0.0.0.0/1', 'dev', interface], capture_output=True)
+    _run(['ip', 'route', 'del', '128.0.0.0/1', 'dev', interface], capture_output=True)
 
     for cidr in _BYPASS_ROUTES:
-        subprocess.run(['ip', 'route', 'del', cidr], capture_output=True)
+        _run(['ip', 'route', 'del', cidr], capture_output=True)
 
     wg_dir = config.config_dir / 'wireguard'
     resolv_backup = wg_dir / 'resolv.conf.backup'
@@ -188,7 +193,7 @@ def route_restore(config: Config, interface: str = WG_INTERFACE) -> None:
             logger.info("Re-enabling IPv6...")
             for key in ['net.ipv6.conf.all.disable_ipv6', 'net.ipv6.conf.default.disable_ipv6',
                         'net.ipv6.conf.lo.disable_ipv6']:
-                subprocess.run(['sysctl', '-w', f'{key}=0'], capture_output=True)
+                _run(['sysctl', '-w', f'{key}=0'], capture_output=True)
         ipv6_backup.unlink()
 
     logger.info("Default routing restored")

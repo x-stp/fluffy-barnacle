@@ -115,11 +115,12 @@ def _ssh(gh: GitHubManager, cs_name: str, command: str,
         CompletedProcess result
     """
     cmd = ['gh', 'codespace', 'ssh', '--codespace', cs_name, '--', command]
-    return subprocess.run(
+    return gh.runner.run(
         cmd,
         input=stdin,
         capture_output=True,
-        timeout=30
+        text=False,
+        timeout=30,
     )
 
 
@@ -141,11 +142,12 @@ def _upload_script(gh: GitHubManager, cs_name: str,
     _validate_remote_path(remote_path)
     cmd = ['gh', 'codespace', 'ssh', '--codespace', cs_name,
            '--', f'cat > {shlex.quote(remote_path)}']
-    result = subprocess.run(
+    result = gh.runner.run(
         cmd,
         input=content.encode(),
         capture_output=True,
-        timeout=30
+        text=False,
+        timeout=30,
     )
     if result.returncode != 0:
         raise RuntimeError(
@@ -179,10 +181,11 @@ def _upload_file(gh: GitHubManager, cs_name: str,
     content = local_path.read_bytes()
     cmd = ['gh', 'codespace', 'ssh', '--codespace', cs_name,
            '--', f'cat > {shlex.quote(remote_path)}']
-    result = subprocess.run(
+    result = gh.runner.run(
         cmd,
         input=content,
         capture_output=True,
+        text=False,
         timeout=60
     )
     if result.returncode != 0:
@@ -219,7 +222,7 @@ def _setup_server_environment(gh: GitHubManager, cs_name: str, port: int) -> Non
 
     # Kill local port forward processes
     try:
-        subprocess.run(
+        gh.runner.run(
             ['pkill', '-f', f'gh codespace ports forward {shlex.quote(str(port))}'],
             capture_output=True
         )
@@ -315,8 +318,10 @@ def _tail_remote_logs(gh: GitHubManager, cs_name: str, new_only: bool = False) -
     """
     tail_cmd = 'tail -n 0 -f /tmp/serve/server.log' if new_only else 'tail -f /tmp/serve/server.log'
     try:
-        subprocess.run(
-            ['gh', 'codespace', 'ssh', '--codespace', cs_name, '--', tail_cmd]
+        gh.runner.run(
+            ['gh', 'codespace', 'ssh', '--codespace', cs_name, '--', tail_cmd],
+            capture_output=False,
+            timeout=None,
         )
     except KeyboardInterrupt:
         pass  # Normal exit
@@ -352,10 +357,11 @@ def _download_captures(gh: GitHubManager, cs_name: str) -> None:
         remote_path = f"/tmp/serve/captures/{filename}"
         local_path = Path(filename)
 
-        dl_result = subprocess.run(
+        dl_result = gh.runner.run(
             ['gh', 'codespace', 'ssh', '--codespace', cs_name,
              '--', f'cat {shlex.quote(remote_path)}'],
             capture_output=True,
+            text=False,
             timeout=30
         )
 
@@ -732,7 +738,7 @@ def stop_server(port: int, gh: GitHubManager, config: Config = None) -> None:
     _ssh(gh, cs_name, "pkill -f 'python3.*csproxy_' 2>/dev/null || true")
 
     try:
-        subprocess.run(
+        gh.runner.run(
             ['pkill', '-f', f'gh codespace ports forward {shlex.quote(str(port))}'],
             capture_output=True
         )
@@ -772,7 +778,7 @@ def clean_all(gh: GitHubManager, config: Config = None) -> None:
 
     logger.info("Killing local port forwards...")
     try:
-        subprocess.run(['pkill', '-f', 'gh codespace ports forward'], capture_output=True)
+        gh.runner.run(['pkill', '-f', 'gh codespace ports forward'], capture_output=True)
     except FileNotFoundError:
         pass
 

@@ -380,6 +380,35 @@ def test_state_update_tunnel(tmp_path):
     assert t["status"] == "healthy"
 
 
+def test_state_add_tunnel_concurrent_writes_do_not_clobber(tmp_path):
+    import threading
+    from csproxy.state import State
+
+    state = State(tmp_path)
+
+    def add(idx):
+        state.add_tunnel(
+            id=f"ssh-{1080 + idx}",
+            kind="ssh",
+            codespace_name=f"test-cs-{idx}",
+            port=1080 + idx,
+            pid=12345 + idx,
+            status="healthy",
+            created=0,
+            failures=0,
+            last_failure=0,
+        )
+
+    threads = [threading.Thread(target=add, args=(idx,)) for idx in range(12)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    ports = sorted(t["port"] for t in state.get_tunnels(kind="ssh"))
+    assert ports == list(range(1080, 1092))
+
+
 def test_state_reconcile_marks_dead_pid_as_crashed(tmp_path):
     from csproxy.state import State
     state = State(tmp_path)

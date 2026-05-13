@@ -368,25 +368,23 @@ def check_wireguard_module():
         assert WG_NETWORK == '10.99.99.0/24'
         print(f"  [+] WG defaults: interface={WG_INTERFACE}, port={WG_PORT}")
 
-        # Verify remote setup script is valid Bash (check for shebang and key markers)
+        # Verify remote setup script is valid Bash and reads key material at runtime.
         assert '#!/usr/bin/env bash' in _REMOTE_SETUP_SCRIPT
         assert 'wg-quick up wg0' in _REMOTE_SETUP_SCRIPT
-        assert '{remote_private_key}' in _REMOTE_SETUP_SCRIPT
-        assert '{local_public_key}' in _REMOTE_SETUP_SCRIPT
+        assert 'read -r REMOTE_PRIVATE_KEY' in _REMOTE_SETUP_SCRIPT
+        assert 'read -r LOCAL_PUBLIC_KEY' in _REMOTE_SETUP_SCRIPT
         print("  [+] Remote setup script template is valid")
 
         # Verify script renders without error when format() is called with test values
         rendered = _REMOTE_SETUP_SCRIPT.format(
-            remote_private_key='TEST_PRIV_KEY=',
             wg_remote_ip='10.99.99.1/24',
             wg_port=51820,
             wg_network='10.99.99.0/24',
-            local_public_key='TEST_PUB_KEY=',
             local_ip_host='10.99.99.2',
             remote_ip_host='10.99.99.1',
         )
-        assert 'TEST_PRIV_KEY=' in rendered
-        assert 'TEST_PUB_KEY=' in rendered
+        assert 'TEST_PRIV_KEY=' not in rendered
+        assert 'TEST_PUB_KEY=' not in rendered
         assert '#!/usr/bin/env bash' in rendered
         print("  [+] Remote setup script renders correctly")
 

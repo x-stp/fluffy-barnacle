@@ -15,15 +15,31 @@ from typing import Mapping, Optional, Sequence
 
 from .utils.logging import get_logger
 
+_DEFAULT_TIMEOUT = object()
+
 
 @dataclass
 class CommandRunner:
     """Small wrapper around subprocess.run with cs-proxy defaults."""
 
-    default_timeout: int = 30
+    default_timeout: Optional[int] = 30
     dry_run: bool = False
     base_env: Optional[Mapping[str, str]] = None
     redacted_values: Sequence[str] = field(default_factory=tuple)
+
+    @staticmethod
+    def _looks_sensitive_env_key(key: str) -> bool:
+        upper = key.upper()
+        return any(
+            marker in upper
+            for marker in ("TOKEN", "PASSWORD", "SECRET", "PRIVATE_KEY", "API_KEY", "AUTH")
+        )
+
+    def _redact_text(self, value: str) -> str:
+        shown = value
+        for secret in (v for v in self.redacted_values if v):
+            shown = shown.replace(secret, "***")
+        return shown
 
     def _merged_env(self, env: Optional[Mapping[str, str]] = None) -> Optional[dict[str, str]]:
         if self.base_env is None and env is None:
@@ -39,8 +55,23 @@ class CommandRunner:
         parts = []
         redacted = {v for v in self.redacted_values if v}
         for part in cmd:
-            parts.append("***" if part in redacted else str(part))
+            shown = str(part)
+            for value in redacted:
+                shown = shown.replace(value, "***")
+            parts.append(shown)
         return " ".join(parts)
+
+    def _display_env(self, env: Optional[Mapping[str, str]]) -> str:
+        if not env:
+            return ""
+        shown = []
+        for key in sorted(env):
+            value = env[key]
+            if self._looks_sensitive_env_key(key):
+                shown.append(f"{key}=***")
+            else:
+                shown.append(f"{key}={self._redact_text(str(value))}")
+        return " ".join(shown)
 
     def run(
         self,
@@ -49,14 +80,17 @@ class CommandRunner:
         check: bool = False,
         capture_output: bool = True,
         text: bool = True,
-        timeout: Optional[int] = None,
+        timeout: object = _DEFAULT_TIMEOUT,
         env: Optional[Mapping[str, str]] = None,
         input=None,
         **kwargs,
     ) -> subprocess.CompletedProcess:
         """Run a command with consistent defaults."""
         logger = get_logger()
+        merged_env = self._merged_env(env)
         logger.debug(f"Running: {self._display_cmd(cmd)}")
+        if env:
+            logger.debug(f"With env: {self._display_env(env)}")
 
         if self.dry_run:
             return subprocess.CompletedProcess(list(cmd), 0, stdout="", stderr="")
@@ -66,8 +100,8 @@ class CommandRunner:
             check=check,
             capture_output=capture_output,
             text=text,
-            timeout=self.default_timeout if timeout is None else timeout,
-            env=self._merged_env(env),
+            timeout=self.default_timeout if timeout is _DEFAULT_TIMEOUT else timeout,
+            env=merged_env,
             input=input,
             **kwargs,
         )

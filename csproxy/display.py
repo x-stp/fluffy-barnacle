@@ -7,9 +7,9 @@ Extracted from proxy.py for modularity.
 """
 
 import os
-import subprocess
 from typing import Optional
 
+from .runner import CommandRunner
 from .utils import Config, get_logger
 
 
@@ -167,7 +167,7 @@ def _show_status_body(config: Config, gh) -> None:
     elif active:
         print(f"\nCodespace:       {active}")
 
-    result = subprocess.run(
+    result = CommandRunner().run(
         ['curl', '-s', '--connect-timeout', '5', 'https://ifconfig.me'],
         capture_output=True,
         text=True,
