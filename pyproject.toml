@@ -43,6 +43,9 @@ dev = [
     "flake8>=6.0",
     "mypy>=1.0",
 ]
+tui = [
+    "textual>=0.60",
+]
 docs = [
     "mkdocs>=1.5",
     "mkdocs-material>=9.0",
@@ -59,6 +62,7 @@ cs-proxy = "csproxy.cli:main_proxy"
 cs-serve = "csproxy.cli:main_serve"
 cs-wg = "csproxy.cli:main_wg"
 cs-tools = "csproxy.tools:main_tools"
+cs-tui = "csproxy.tui:main_tui"
 
 [tool.setuptools.packages.find]
 where = ["."]

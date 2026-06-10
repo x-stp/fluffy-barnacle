@@ -198,6 +198,24 @@ def watch_status(config: Config, gh, interval: int = 2) -> None:
     print()
 
 
+def print_diagnostics(checks) -> int:
+    """
+    Render diagnostic Checks from services.run_diagnostics and return the number
+    of failures (0 == all passed). Presentation half of the cs-proxy check command.
+    """
+    print("\n=== cs-proxy Check ===\n")
+    for check in checks:
+        icon = "✓" if check.ok else "✗"
+        print(f"  {icon}  {check.message}")
+    print()
+    issues = sum(1 for c in checks if not c.ok)
+    if issues == 0:
+        print("All checks passed.")
+    else:
+        print(f"{issues} issue(s) found. Run with --verbose for details.")
+    return issues
+
+
 def show_logs(config: Config, lines: int = 50) -> None:
     """Show recent proxy log entries."""
     logger = get_logger()

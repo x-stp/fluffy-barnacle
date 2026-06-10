@@ -8,7 +8,6 @@ integration with common security tools.
 """
 
 import os
-import shutil
 import time
 from pathlib import Path
 from typing import Optional
@@ -31,7 +30,7 @@ from .tunnel import SSHTunnel, HTTPProxyManager  # noqa: F401
 from .codespace import CodespaceSelector  # noqa: F401
 from .display import (  # noqa: F401
     print_env_exports, print_usage_examples, print_burp_config,
-    show_status, show_logs, show_help,
+    print_diagnostics, show_status, show_logs, show_help,
 )
 
 VERSION = "1.0.0"
@@ -830,101 +829,11 @@ def cmd_account(args, config: Config, gh: GitHubManager) -> int:
 
 def cmd_check(args, config: Config, gh: GitHubManager) -> int:
     """Run diagnostics and report configuration/dependency health."""
-    logger = get_logger()
-    issues = 0
-    checks = []
+    from .services import run_diagnostics
 
-    def _ok(msg: str) -> None:
-        checks.append(("PASS", msg))
-
-    def _fail(msg: str) -> None:
-        nonlocal issues
-        issues += 1
-        checks.append(("FAIL", msg))
-
-    # 1. GitHub CLI
-    if shutil.which('gh'):
-        _ok("gh CLI is installed")
-        result = gh.runner.run(['gh', 'auth', 'status'], capture_output=True, text=True)
-        if result.returncode == 0:
-            _ok("gh CLI is authenticated")
-        else:
-            _fail("gh CLI is not authenticated (run: gh auth login)")
-    else:
-        _fail("gh CLI is not installed")
-
-    # 2. SSH
-    if shutil.which('ssh'):
-        _ok("ssh is installed")
-    else:
-        _fail("ssh is not installed")
-
-    # 3. curl
-    if shutil.which('curl'):
-        _ok("curl is installed")
-    else:
-        _fail("curl is not installed")
-
-    # 4. proxychains4
-    if shutil.which('proxychains4'):
-        _ok("proxychains4 is installed")
-    else:
-        _fail("proxychains4 is not installed (optional: apt install proxychains-ng)")
-
-    # 5. Config directory / file
-    if config.config_dir.exists():
-        _ok(f"Config directory exists: {config.config_dir}")
-    else:
-        _fail(f"Config directory missing: {config.config_dir}")
-
-    if config.config_file.exists():
-        _ok(f"Config file exists: {config.config_file}")
-    else:
-        _fail(f"Config file missing: {config.config_file}")
-
-    # 6. SSH key
-    key_file = config.config_dir / 'codespace_key'
-    if key_file.exists():
-        _ok(f"SSH key exists: {key_file}")
-    else:
-        _fail(f"SSH key missing: {key_file} (run: cs-proxy keygen)")
-
-    # 7. Port conflicts
-    import socket
-    for port, label in [(config.socks_port, 'SOCKS5'), (config.http_proxy_port, 'HTTP')]:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                s.bind(('127.0.0.1', port))
-                _ok(f"{label} port {port} is available")
-            except OSError:
-                _fail(f"{label} port {port} is already in use")
-
-    # 8. State file health
-    from .state import State
-    try:
-        state = State(config.config_dir)
-        state_data = state.load()
-        tunnels = state_data.get('tunnels', [])
-        if tunnels:
-            _ok(f"State file has {len(tunnels)} tunnel(s)")
-        else:
-            _ok("State file is healthy (no tunnels)")
-    except Exception as e:
-        _fail(f"State file error: {e}")
-
-    # Report
-    print("\n=== cs-proxy Check ===\n")
-    for status, msg in checks:
-        icon = "✓" if status == "PASS" else "✗"
-        print(f"  {icon}  {msg}")
-    print()
-    if issues == 0:
-        print("All checks passed.")
-        return 0
-    else:
-        print(f"{issues} issue(s) found. Run with --verbose for details.")
-        return 1
+    checks = run_diagnostics(config, gh)
+    issues = print_diagnostics(checks)
+    return 1 if issues else 0
 
 
 def cmd_doctor(args, config: Config, gh: GitHubManager) -> int:
@@ -1003,6 +912,13 @@ def cmd_help(args, config: Config, gh: GitHubManager) -> int:
     return 0
 
 
+def cmd_tui(args, config: Config, gh: GitHubManager) -> int:
+    """Launch the interactive terminal UI (requires the 'tui' extra)."""
+    from .tui import main_tui
+
+    return main_tui(args)
+
+
 # =============================================================================
 # Command Dispatch Table
 # =============================================================================
@@ -1040,5 +956,6 @@ COMMANDS = {
     'doctor':       cmd_doctor,
     'pool':         cmd_pool,
     'chain':        cmd_chain,
+    'tui':          cmd_tui,
     'help':         cmd_help,
 }
