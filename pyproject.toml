@@ -81,11 +81,14 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 
-# Third-party packages without type information. textual is only present with
-# the optional [tui] extra (not installed in the lint job); yaml and colorama
-# ship no stubs in this environment.
+# Third-party packages without usable type info in every environment that runs
+# mypy. textual is only present with the optional [tui] extra (not installed in
+# the lint job); yaml and colorama ship no stubs here; portalocker has a
+# try/except ImportError fallback in locking.py, so it may be absent entirely.
+# Ignoring missing imports keeps `mypy csproxy` clean whether or not the
+# interpreter running mypy happens to have these installed.
 [[tool.mypy.overrides]]
-module = ["textual.*", "yaml", "colorama"]
+module = ["textual.*", "yaml", "colorama", "portalocker"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
