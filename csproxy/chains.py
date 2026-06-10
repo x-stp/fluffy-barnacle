@@ -189,8 +189,8 @@ def _cleanup_remote_script(gh: GitHubManager, codespace: str, script_path: str) 
             f"rm -f {quoted} {quoted}.log",
             timeout=10,
         )
-    except Exception:
-        pass
+    except (OSError, subprocess.SubprocessError) as e:
+        get_logger().debug(f"Best-effort remote script cleanup failed: {e}")
 
 
 def _upload_secret_file(gh: GitHubManager, codespace: str, remote_path: str, secret: str) -> None:
@@ -205,8 +205,8 @@ def _cleanup_remote_file(gh: GitHubManager, codespace: str, remote_path: str) ->
         return
     try:
         _ssh(gh, codespace, f"rm -f {shlex.quote(remote_path)}", timeout=10)
-    except Exception:
-        pass
+    except (OSError, subprocess.SubprocessError) as e:
+        get_logger().debug(f"Best-effort remote file cleanup failed: {e}")
 
 
 def _set_port_private(gh: GitHubManager, codespace: str, port: int) -> None:
@@ -218,8 +218,8 @@ def _set_port_private(gh: GitHubManager, codespace: str, port: int) -> None:
             ["codespace", "ports", "visibility", f"{port}:private", "--codespace", codespace],
             check=False,
         )
-    except Exception:
-        pass
+    except (OSError, subprocess.SubprocessError) as e:
+        get_logger().debug(f"Best-effort port visibility reset failed: {e}")
 
 
 def _ensure_chain_hops(chain: dict, config: Config, gh: GitHubManager) -> list[dict]:

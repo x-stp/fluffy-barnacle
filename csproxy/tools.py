@@ -52,8 +52,8 @@ def _get_proxy_port(config: Config) -> int:
         healthy = state.get_tunnels(kind="ssh", status="healthy")
         if healthy:
             return random.choice(healthy)["port"]
-    except Exception:
-        pass
+    except (TimeoutError, OSError, KeyError) as e:
+        get_logger().debug(f"Falling back to configured socks_port: {e}")
     return config.socks_port
 
 

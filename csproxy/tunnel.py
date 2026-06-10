@@ -109,14 +109,17 @@ class SSHTunnel:
             popen_kwargs['start_new_session'] = True
 
         # Redirect stderr to a file so we can surface it if the worker
-        # crashes immediately (e.g., import error, bad spec).
+        # crashes immediately (e.g., import error, bad spec). The child gets
+        # its own dup of the fd at exec time, so the parent closes its copy on
+        # context exit rather than leaking the handle for the worker's lifetime.
         stderr_file = self.spec_file.with_suffix('.stderr')
-        proc = subprocess.Popen(
-            worker_cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=open(stderr_file, 'w'),
-            **popen_kwargs,
-        )
+        with open(stderr_file, 'w') as stderr_fh:
+            proc = subprocess.Popen(
+                worker_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_fh,
+                **popen_kwargs,
+            )
         self._process = proc
         self._write_pid(proc.pid)
 
@@ -241,8 +244,10 @@ class SSHTunnel:
                     ['fuser', '-k', f'{self.port}/tcp'],
                     capture_output=True, timeout=5
                 )
-        except Exception:
-            pass
+        except (OSError, subprocess.SubprocessError) as e:
+            # Best-effort cleanup; surface at debug level so a stuck port is
+            # still diagnosable rather than silently swallowed.
+            self.logger.debug(f"Failed to kill holders of port {self.port}: {e}")
 
     def is_running(self) -> bool:
         """Check if the tunnel process is still alive."""

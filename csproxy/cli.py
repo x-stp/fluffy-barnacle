@@ -6,11 +6,23 @@ Provides command-line interfaces for cs-proxy, cs-serve, cs-wg, and cs-tools.
 Each main command has its own entry point.
 """
 
+import argparse
 import subprocess
 import sys
 
 from .github import GitHubManager
 from .utils import CSProxyError, Config, get_logger, setup_logger
+
+
+def _valid_port(value: str) -> int:
+    """argparse type: accept only an unprivileged TCP port (1024-65535)."""
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError(f"port must be an integer, got {value!r}")
+    if not 1024 <= port <= 65535:
+        raise argparse.ArgumentTypeError(f"port must be between 1024 and 65535, got {port}")
+    return port
 
 
 def main_proxy(argv=None):
@@ -29,7 +41,7 @@ def main_proxy(argv=None):
         description='GitHub Codespaces Proxy Tool - SOCKS5/HTTP proxy management',
         add_help=False,
     )
-    parser.add_argument('-p', '--port', type=int, help='SOCKS5 proxy port (default: 1080)')
+    parser.add_argument('-p', '--port', type=_valid_port, help='SOCKS5 proxy port (default: 1080)')
     parser.add_argument('-n', '--num-proxies', type=int, default=1,
                         help='Number of codespaces to create (1-2, default: 1)')
     parser.add_argument('-c', '--codespace', help='Codespace name to use')

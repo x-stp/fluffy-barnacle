@@ -7,10 +7,11 @@ Extracted from proxy.py for modularity.
 """
 
 import os
+import subprocess
 from typing import Optional
 
 from .runner import CommandRunner
-from .utils import Config, get_logger
+from .utils import Config, GitHubAuthError, get_logger
 
 
 VERSION = "1.0.0"
@@ -145,8 +146,8 @@ def _show_status_body(config: Config, gh) -> None:
     codespaces = []
     try:
         codespaces = gh.list_codespaces()
-    except Exception:
-        pass
+    except (GitHubAuthError, subprocess.SubprocessError, ValueError, OSError) as e:
+        get_logger().debug(f"Could not list codespaces: {e}")
 
     active = config.codespace_name
     managed = set(config.codespace_names)
