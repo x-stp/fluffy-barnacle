@@ -21,21 +21,21 @@ from .wg_constants import WG_INTERFACE
 # add your specific region CIDR here.
 _BYPASS_ROUTES = [
     # GitHub (well-documented, stable)
-    '140.82.112.0/20',   # GitHub web/API
-    '192.30.252.0/22',   # GitHub pages
-    '185.199.108.0/22',  # GitHub pages
+    "140.82.112.0/20",  # GitHub web/API
+    "192.30.252.0/22",  # GitHub pages
+    "185.199.108.0/22",  # GitHub pages
     # Azure (narrowed from /8 to /16 for common datacenter regions)
-    '20.37.0.0/16',      # Azure East US
-    '20.38.0.0/16',      # Azure East US 2
-    '20.42.0.0/16',      # Azure West Europe
-    '20.43.0.0/16',      # Azure North Europe
-    '20.195.0.0/16',     # Azure Southeast Asia
-    '52.96.0.0/16',      # Azure West US 2
-    '52.136.0.0/16',     # Azure West Central US
-    '52.147.0.0/16',     # Azure East US
-    '52.165.0.0/16',     # Azure East US 2
-    '52.166.0.0/16',     # Azure Central US
-    '52.239.0.0/16',     # Azure North Central US
+    "20.37.0.0/16",  # Azure East US
+    "20.38.0.0/16",  # Azure East US 2
+    "20.42.0.0/16",  # Azure West Europe
+    "20.43.0.0/16",  # Azure North Europe
+    "20.195.0.0/16",  # Azure Southeast Asia
+    "52.96.0.0/16",  # Azure West US 2
+    "52.136.0.0/16",  # Azure West Central US
+    "52.147.0.0/16",  # Azure East US
+    "52.165.0.0/16",  # Azure East US 2
+    "52.166.0.0/16",  # Azure Central US
+    "52.239.0.0/16",  # Azure North Central US
 ]
 
 
@@ -56,18 +56,18 @@ def add_route(target: str, interface: str = WG_INTERFACE) -> None:
     if not target:
         raise ValueError("Usage: cs-wg route add <ip/cidr or domain>")
 
-    if not re.match(r'^\d+\.\d+\.\d+\.\d+', target):
-        result = _run(['dig', '+short', target], capture_output=True, text=True)
-        ip = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ''
+    if not re.match(r"^\d+\.\d+\.\d+\.\d+", target):
+        result = _run(["dig", "+short", target], capture_output=True, text=True)
+        ip = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
         if not ip:
             raise RuntimeError(f"Could not resolve: {target}")
         logger.info(f"Resolved {target} -> {ip}")
         target = ip
 
-    if '/' not in target:
+    if "/" not in target:
         target = f"{target}/32"
 
-    result = _run(['ip', 'route', 'add', target, 'dev', interface], capture_output=True)
+    result = _run(["ip", "route", "add", target, "dev", interface], capture_output=True)
     if result.returncode != 0:
         logger.warning(f"Route may already exist: {target}")
     else:
@@ -81,10 +81,10 @@ def del_route(target: str, interface: str = WG_INTERFACE) -> None:
     if not target:
         raise ValueError("Usage: cs-wg route del <ip/cidr>")
 
-    if '/' not in target:
+    if "/" not in target:
         target = f"{target}/32"
 
-    _run(['ip', 'route', 'del', target, 'dev', interface], capture_output=True)
+    _run(["ip", "route", "del", target, "dev", interface], capture_output=True)
     logger.info(f"Removed route: {target}")
 
 
@@ -98,22 +98,24 @@ def route_all(config: Config, interface: str = WG_INTERFACE) -> None:
     logger = get_logger()
     _check_root()
 
-    result = _run(['ip', 'link', 'show', interface], capture_output=True)
+    result = _run(["ip", "link", "show", interface], capture_output=True)
     if result.returncode != 0:
         raise RuntimeError(f"WireGuard interface {interface} not found. Run 'cs-wg up' first.")
 
     logger.warning("This will route ALL traffic through the Codespace!")
     logger.warning("The SSH tunnel and local network will be preserved.")
     confirm = input("Continue? [y/N] ").strip().lower()
-    if confirm not in ('y', 'yes'):
+    if confirm not in ("y", "yes"):
         return
 
-    result = _run(['ip', 'route'], capture_output=True, text=True)
-    default_line = next((l for l in result.stdout.splitlines() if l.startswith('default')), '')
+    result = _run(["ip", "route"], capture_output=True, text=True)
+    default_line = next(
+        (line for line in result.stdout.splitlines() if line.startswith("default")), ""
+    )
     parts = default_line.split()
     try:
-        gw_idx = parts.index('via') + 1
-        dev_idx = parts.index('dev') + 1
+        gw_idx = parts.index("via") + 1
+        dev_idx = parts.index("dev") + 1
         default_gw = parts[gw_idx]
         default_dev = parts[dev_idx]
     except (ValueError, IndexError):
@@ -121,44 +123,52 @@ def route_all(config: Config, interface: str = WG_INTERFACE) -> None:
 
     logger.info(f"Default gateway: {default_gw} via {default_dev}")
 
-    wg_dir = config.config_dir / 'wireguard'
-    (wg_dir / 'original_route').write_text(f"{default_gw} {default_dev}")
+    wg_dir = config.config_dir / "wireguard"
+    (wg_dir / "original_route").write_text(f"{default_gw} {default_dev}")
 
     try:
         import shutil
-        shutil.copy2('/etc/resolv.conf', str(wg_dir / 'resolv.conf.backup'))
+
+        shutil.copy2("/etc/resolv.conf", str(wg_dir / "resolv.conf.backup"))
     except OSError:
         pass
 
-    ipv6_result = _run(['cat', '/proc/sys/net/ipv6/conf/all/disable_ipv6'],
-                       capture_output=True, text=True)
-    (wg_dir / 'ipv6_state.backup').write_text(ipv6_result.stdout.strip() or '1')
+    ipv6_result = _run(
+        ["cat", "/proc/sys/net/ipv6/conf/all/disable_ipv6"], capture_output=True, text=True
+    )
+    (wg_dir / "ipv6_state.backup").write_text(ipv6_result.stdout.strip() or "1")
     logger.info("Disabling IPv6 (tunnel is IPv4 only)...")
-    for key in ['net.ipv6.conf.all.disable_ipv6', 'net.ipv6.conf.default.disable_ipv6',
-                'net.ipv6.conf.lo.disable_ipv6']:
-        _run(['sysctl', '-w', f'{key}=1'], capture_output=True)
+    for key in [
+        "net.ipv6.conf.all.disable_ipv6",
+        "net.ipv6.conf.default.disable_ipv6",
+        "net.ipv6.conf.lo.disable_ipv6",
+    ]:
+        _run(["sysctl", "-w", f"{key}=1"], capture_output=True)
 
     logger.info("Adding bypass routes for GitHub/Azure...")
     for cidr in _BYPASS_ROUTES:
-        _run(['ip', 'route', 'add', cidr, 'via', default_gw,
-              'dev', default_dev], capture_output=True)
+        _run(
+            ["ip", "route", "add", cidr, "via", default_gw, "dev", default_dev], capture_output=True
+        )
 
-    kernel_result = _run(['ip', 'route'], capture_output=True, text=True)
+    kernel_result = _run(["ip", "route"], capture_output=True, text=True)
     for line in kernel_result.stdout.splitlines():
-        if 'proto kernel' in line and default_dev in line:
+        if "proto kernel" in line and default_dev in line:
             local_net = line.split()[0]
-            if local_net and local_net != 'default':
+            if local_net and local_net != "default":
                 logger.info(f"Preserving local network: {local_net}")
-                _run(['ip', 'route', 'add', local_net, 'via', default_gw,
-                      'dev', default_dev], capture_output=True)
+                _run(
+                    ["ip", "route", "add", local_net, "via", default_gw, "dev", default_dev],
+                    capture_output=True,
+                )
             break
 
     logger.info("Routing all traffic through tunnel...")
-    _run(['ip', 'route', 'add', '0.0.0.0/1', 'dev', interface], check=True)
-    _run(['ip', 'route', 'add', '128.0.0.0/1', 'dev', interface], check=True)
+    _run(["ip", "route", "add", "0.0.0.0/1", "dev", interface], check=True)
+    _run(["ip", "route", "add", "128.0.0.0/1", "dev", interface], check=True)
 
     logger.info("Setting DNS to use tunnel...")
-    Path('/etc/resolv.conf').write_text("nameserver 1.1.1.1\nnameserver 8.8.8.8\n")
+    Path("/etc/resolv.conf").write_text("nameserver 1.1.1.1\nnameserver 8.8.8.8\n")
 
     logger.info("All traffic now routed through Codespace!")
     logger.info("Test with: curl https://ifconfig.me")
@@ -172,28 +182,32 @@ def route_restore(config: Config, interface: str = WG_INTERFACE) -> None:
 
     logger.info("Restoring default routing...")
 
-    _run(['ip', 'route', 'del', '0.0.0.0/1', 'dev', interface], capture_output=True)
-    _run(['ip', 'route', 'del', '128.0.0.0/1', 'dev', interface], capture_output=True)
+    _run(["ip", "route", "del", "0.0.0.0/1", "dev", interface], capture_output=True)
+    _run(["ip", "route", "del", "128.0.0.0/1", "dev", interface], capture_output=True)
 
     for cidr in _BYPASS_ROUTES:
-        _run(['ip', 'route', 'del', cidr], capture_output=True)
+        _run(["ip", "route", "del", cidr], capture_output=True)
 
-    wg_dir = config.config_dir / 'wireguard'
-    resolv_backup = wg_dir / 'resolv.conf.backup'
+    wg_dir = config.config_dir / "wireguard"
+    resolv_backup = wg_dir / "resolv.conf.backup"
     if resolv_backup.exists():
         import shutil
-        shutil.copy2(str(resolv_backup), '/etc/resolv.conf')
+
+        shutil.copy2(str(resolv_backup), "/etc/resolv.conf")
         resolv_backup.unlink()
         logger.info("DNS restored")
 
-    ipv6_backup = wg_dir / 'ipv6_state.backup'
+    ipv6_backup = wg_dir / "ipv6_state.backup"
     if ipv6_backup.exists():
         was_disabled = ipv6_backup.read_text().strip()
-        if was_disabled == '0':
+        if was_disabled == "0":
             logger.info("Re-enabling IPv6...")
-            for key in ['net.ipv6.conf.all.disable_ipv6', 'net.ipv6.conf.default.disable_ipv6',
-                        'net.ipv6.conf.lo.disable_ipv6']:
-                _run(['sysctl', '-w', f'{key}=0'], capture_output=True)
+            for key in [
+                "net.ipv6.conf.all.disable_ipv6",
+                "net.ipv6.conf.default.disable_ipv6",
+                "net.ipv6.conf.lo.disable_ipv6",
+            ]:
+                _run(["sysctl", "-w", f"{key}=0"], capture_output=True)
         ipv6_backup.unlink()
 
     logger.info("Default routing restored")

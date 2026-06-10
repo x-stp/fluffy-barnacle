@@ -9,5 +9,5 @@ Usage:
 import sys
 from .cli import main_proxy
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main_proxy())

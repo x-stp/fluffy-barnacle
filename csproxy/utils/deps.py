@@ -35,7 +35,7 @@ def check_command(command: str) -> bool:
 def check_dependencies(
     required: Optional[List[str]] = None,
     optional: Optional[List[str]] = None,
-    raise_on_missing: bool = True
+    raise_on_missing: bool = True,
 ) -> tuple[list[str], list[str]]:
     """
     Check for required and optional dependencies.
@@ -59,7 +59,7 @@ def check_dependencies(
 
     # Default required dependencies
     if required is None:
-        required = ['gh', 'ssh', 'curl']
+        required = ["gh", "ssh", "curl"]
 
     if optional is None:
         optional = []
@@ -86,7 +86,7 @@ def check_dependencies(
         logger.error(f"Missing required dependencies: {', '.join(missing_required)}")
 
         # Provide installation hints
-        if 'gh' in missing_required:
+        if "gh" in missing_required:
             logger.info("Install GitHub CLI from: https://cli.github.com/")
 
         if raise_on_missing:
@@ -109,7 +109,7 @@ def check_wireguard_deps() -> bool:
         WireGuard requires: wg, wg-quick, socat, ip (iproute2)
     """
     logger = get_logger()
-    wg_deps = ['wg', 'wg-quick', 'socat', 'ip']
+    wg_deps = ["wg", "wg-quick", "socat", "ip"]
 
     missing = [cmd for cmd in wg_deps if not check_command(cmd)]
 
@@ -150,13 +150,13 @@ def get_dependency_install_commands() -> dict[str, str]:
         'https://cli.github.com/manual/installation'
     """
     return {
-        'gh': 'https://cli.github.com/manual/installation',
-        'ssh': 'sudo apt install openssh-client  # Debian/Ubuntu',
-        'curl': 'sudo apt install curl',
-        'jq': 'sudo apt install jq',
-        'socat': 'sudo apt install socat',
-        'wireguard': 'sudo apt install wireguard-tools',
-        'iproute2': 'sudo apt install iproute2',
-        'proxychains4': 'sudo apt install proxychains4',
-        'tinyproxy': 'sudo apt install tinyproxy',
+        "gh": "https://cli.github.com/manual/installation",
+        "ssh": "sudo apt install openssh-client  # Debian/Ubuntu",
+        "curl": "sudo apt install curl",
+        "jq": "sudo apt install jq",
+        "socat": "sudo apt install socat",
+        "wireguard": "sudo apt install wireguard-tools",
+        "iproute2": "sudo apt install iproute2",
+        "proxychains4": "sudo apt install proxychains4",
+        "tinyproxy": "sudo apt install tinyproxy",
     }

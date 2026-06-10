@@ -32,7 +32,7 @@ class DependencyError(CSProxyError):
         Args:
             missing_deps: List of missing dependency names
         """
-        deps_str = ', '.join(missing_deps)
+        deps_str = ", ".join(missing_deps)
         message = f"Missing dependencies: {deps_str}. Please install them first."
         super().__init__(message, exit_code=1)
         self.missing_deps = missing_deps

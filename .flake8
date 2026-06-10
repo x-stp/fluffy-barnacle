@@ -9,3 +9,12 @@ exclude =
     dist,
     .venv,
     venv
+per-file-ignores =
+    # Embedded shell/JS/HTML lives inside string literals where line length
+    # isn't meaningfully controllable and `# noqa` can't be placed.
+    csproxy/templates.py:E501
+    csproxy/completion.py:E501
+    # Import-contract tests deliberately import symbols to assert importability;
+    # the unused-import warning is expected and intentional there.
+    tests/test_api_contracts.py:F401
+    tests/test_installation.py:F401

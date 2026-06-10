@@ -11,9 +11,7 @@ def _install_fake_gh(tmp_path, monkeypatch):
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh = bindir / "gh"
-    gh.write_text(
-        textwrap.dedent(
-            """\
+    gh.write_text(textwrap.dedent("""\
             #!/usr/bin/env python3
             import json
             import sys
@@ -39,9 +37,7 @@ def _install_fake_gh(tmp_path, monkeypatch):
 
             print(f"unexpected gh args: {args}", file=sys.stderr)
             sys.exit(2)
-            """
-        )
-    )
+            """))
     gh.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bindir}:{os.environ.get('PATH', '')}")
     return gh

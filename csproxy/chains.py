@@ -94,7 +94,9 @@ def _runner_env_for_gh(gh: GitHubManager) -> Optional[dict]:
     return {"GH_TOKEN": token} if token else None
 
 
-def _ssh(gh: GitHubManager, codespace: str, command: str, *, timeout: int = 30) -> subprocess.CompletedProcess:
+def _ssh(
+    gh: GitHubManager, codespace: str, command: str, *, timeout: int = 30
+) -> subprocess.CompletedProcess:
     return gh.runner.run(
         ["gh", "codespace", "ssh", "--codespace", codespace, "--", command],
         capture_output=True,
@@ -144,7 +146,9 @@ def _start_remote_script(
     time.sleep(1)
 
 
-def _wait_local_forward(port: int, process: subprocess.Popen, label: str, timeout: int = 20) -> None:
+def _wait_local_forward(
+    port: int, process: subprocess.Popen, label: str, timeout: int = 20
+) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
         if process.poll() is not None:
@@ -185,7 +189,7 @@ def _cleanup_remote_script(gh: GitHubManager, codespace: str, script_path: str) 
             gh,
             codespace,
             "for pid in $(pgrep -f "
-            f"{process_pattern} 2>/dev/null); do kill \"$pid\" 2>/dev/null || true; done; "
+            f'{process_pattern} 2>/dev/null); do kill "$pid" 2>/dev/null || true; done; '
             f"rm -f {quoted} {quoted}.log",
             timeout=10,
         )
@@ -430,7 +434,7 @@ def _cmd_chain_stop(parsed, config: Config, gh: GitHubManager) -> int:
                 hop_gh,
                 name,
                 "for pid in $(pgrep -f '[p]ython3 .*[/]tmp/csproxy_chain_' 2>/dev/null); "
-                "do kill \"$pid\" 2>/dev/null || true; done; "
+                'do kill "$pid" 2>/dev/null || true; done; '
                 "rm -f /tmp/csproxy_chain_*",
                 timeout=10,
             )
@@ -470,13 +474,11 @@ def cmd_chain(args, config: Config, gh: GitHubManager) -> int:
 
 
 def chain_help() -> str:
-    return textwrap.dedent(
-        """\
+    return textwrap.dedent("""\
         Chain commands:
           cs-proxy chain create NAME --hop WestEurope --hop EastUs
           cs-proxy chain create NAME --hop eu:WestEurope --hop us:EastUs
           cs-proxy chain start NAME [--port 1080]
           cs-proxy chain status [NAME]
           cs-proxy chain stop NAME
-        """
-    )
+        """)

@@ -11,4 +11,5 @@ def isolated_config_dir(tmp_path, monkeypatch):
 def clear_check_cache():
     """Clear the proxy health-check cache so tests don't pollute each other."""
     from csproxy.tools import _CHECK_CACHE
+
     _CHECK_CACHE.clear()

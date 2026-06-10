@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Lightweight JSON-based state management for csproxy.
 
@@ -54,17 +55,19 @@ class State:
                 suffix = pid_file.stem.replace("proxy", "")
                 idx = int(suffix) - 1 if suffix else 0
                 port = 1080 + idx
-                tunnels.append({
-                    "id": f"ssh-{port}",
-                    "kind": "ssh",
-                    "codespace_name": "",
-                    "port": port,
-                    "pid": pid,
-                    "status": "unknown",
-                    "created": 0,
-                    "failures": 0,
-                    "last_failure": 0,
-                })
+                tunnels.append(
+                    {
+                        "id": f"ssh-{port}",
+                        "kind": "ssh",
+                        "codespace_name": "",
+                        "port": port,
+                        "pid": pid,
+                        "status": "unknown",
+                        "created": 0,
+                        "failures": 0,
+                        "last_failure": 0,
+                    }
+                )
             except (ValueError, OSError):
                 continue
 
@@ -127,6 +130,7 @@ class State:
 
         Call this on every CLI startup so stale state from previous runs is cleaned up.
         """
+
         def updater(data):
             crashed = []
             for t in data.get("tunnels", []):
@@ -143,14 +147,13 @@ class State:
 
     def clear_all(self) -> None:
         """Remove all tunnels from state."""
+
         def updater(data):
             data["tunnels"] = []
 
         self._update_locked(updater)
 
-    def get_tunnels(
-        self, kind: Optional[str] = None, status: Optional[str] = None
-    ) -> list[dict]:
+    def get_tunnels(self, kind: Optional[str] = None, status: Optional[str] = None) -> list[dict]:
         """Return all tunnels, optionally filtered by kind and/or status."""
         data = self.load()
         tunnels = list(data.get("tunnels", []))
@@ -169,6 +172,7 @@ class State:
 
     def add_tunnel(self, **fields: Any) -> None:
         """Add or replace a tunnel entry by its 'id'."""
+
         def updater(data):
             tunnels = [t for t in data.get("tunnels", []) if t.get("id") != fields.get("id")]
             tunnels.append(fields)
@@ -176,10 +180,9 @@ class State:
 
         self._update_locked(updater)
 
-    def remove_tunnel(
-        self, port: Optional[int] = None, tunnel_id: Optional[str] = None
-    ) -> None:
+    def remove_tunnel(self, port: Optional[int] = None, tunnel_id: Optional[str] = None) -> None:
         """Remove a tunnel by port and/or tunnel_id."""
+
         def updater(data):
             tunnels = data.get("tunnels", [])
             if port is not None:
@@ -192,6 +195,7 @@ class State:
 
     def update_tunnel(self, port: int, **kwargs: Any) -> None:
         """Update fields for the tunnel matching the given port."""
+
         def updater(data):
             for t in data.get("tunnels", []):
                 if t.get("port") == port:
@@ -204,14 +208,13 @@ class State:
         """Convenience wrapper to mark a tunnel as crashed."""
         self.update_tunnel(port, status="crashed")
 
-    def record_failure(
-        self, port: int, max_failures: int = 3, window: int = 600
-    ) -> bool:
+    def record_failure(self, port: int, max_failures: int = 3, window: int = 600) -> bool:
         """
         Record a health-check failure for the tunnel on the given port.
 
         Returns True if the circuit breaker tripped (status set to 'dead').
         """
+
         def updater(data):
             for t in data.get("tunnels", []):
                 if t.get("port") == port:

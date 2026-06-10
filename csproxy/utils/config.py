@@ -13,6 +13,7 @@ from typing import Any, List, Optional
 
 try:
     import yaml
+
     YAML_AVAILABLE = True
 except ImportError:
     YAML_AVAILABLE = False
@@ -61,9 +62,7 @@ class _ConfigData:
         if not 1024 <= self.socks_port <= 65535:
             raise ValueError(f"socks_port must be 1024-65535, got {self.socks_port}")
         if not 1024 <= self.http_proxy_port <= 65535:
-            raise ValueError(
-                f"http_proxy_port must be 1024-65535, got {self.http_proxy_port}"
-            )
+            raise ValueError(f"http_proxy_port must be 1024-65535, got {self.http_proxy_port}")
         if not 1 <= self.num_proxies <= 5:
             raise ValueError(f"num_proxies must be 1-5, got {self.num_proxies}")
         if self.reconnect_delay < 1:
@@ -208,13 +207,9 @@ class Config:
         except FileNotFoundError:
             self.logger.debug(f"Config file not found: {self.config_file}")
         except yaml.YAMLError as e:
-            raise ConfigError(
-                f"Invalid YAML syntax: {e}", config_file=str(self.config_file)
-            )
+            raise ConfigError(f"Invalid YAML syntax: {e}", config_file=str(self.config_file))
         except (OSError, PermissionError) as e:
-            raise ConfigError(
-                f"Cannot read config file: {e}", config_file=str(self.config_file)
-            )
+            raise ConfigError(f"Cannot read config file: {e}", config_file=str(self.config_file))
         except (ValueError, TypeError) as e:
             raise ConfigError(
                 f"Invalid configuration value: {e}", config_file=str(self.config_file)
@@ -234,9 +229,7 @@ class Config:
             self.config_file.chmod(0o600)
             self.logger.info(f"Configuration saved to {self.config_file}")
         except (OSError, PermissionError) as e:
-            raise ConfigError(
-                f"Cannot write config file: {e}", config_file=str(self.config_file)
-            )
+            raise ConfigError(f"Cannot write config file: {e}", config_file=str(self.config_file))
 
     # ------------------------------------------------------------------
     # Get / Set

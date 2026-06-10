@@ -29,22 +29,27 @@ class SSHTunnel:
     using exponential backoff, mirroring the subshell loop in cs-proxy.sh.
     """
 
-    def __init__(self, config: Config, codespace_name: str, *,
-                 port: Optional[int] = None,
-                 pid_suffix: str = ''):
+    def __init__(
+        self,
+        config: Config,
+        codespace_name: str,
+        *,
+        port: Optional[int] = None,
+        pid_suffix: str = "",
+    ):
         self.config = config
         self.codespace_name = codespace_name
         self.port = port or config.socks_port
         self.logger = get_logger()
         self.runner = CommandRunner()
-        self.pid_file = config.config_dir / f'proxy{pid_suffix}.pid'
-        self.stop_file = config.config_dir / f'proxy{pid_suffix}.pid.stop'
-        self.log_file = config.config_dir / f'proxy{pid_suffix}.log'
-        self.spec_file = config.config_dir / 'workers' / f'{self.port}.json'
-        self.ready_file = self.spec_file.with_suffix('.ready')
-        self.status_file = self.spec_file.with_suffix('.status.json')
+        self.pid_file = config.config_dir / f"proxy{pid_suffix}.pid"
+        self.stop_file = config.config_dir / f"proxy{pid_suffix}.pid.stop"
+        self.log_file = config.config_dir / f"proxy{pid_suffix}.log"
+        self.spec_file = config.config_dir / "workers" / f"{self.port}.json"
+        self.ready_file = self.spec_file.with_suffix(".ready")
+        self.status_file = self.spec_file.with_suffix(".status.json")
         self.state = State(config.config_dir)
-        self.tunnel_id = f'ssh-{self.port}'
+        self.tunnel_id = f"ssh-{self.port}"
         self._process: Optional[subprocess.Popen] = None
 
     def start(self, start_timeout: int = 30) -> None:
@@ -73,47 +78,54 @@ class SSHTunnel:
         self.spec_file.parent.mkdir(parents=True, exist_ok=True)
 
         ssh_args = [
-            '--',
-            '-D', f'127.0.0.1:{self.port}',
-            '-N',
-            '-o', 'ServerAliveInterval=30',
-            '-o', 'ServerAliveCountMax=3',
-            '-o', 'TCPKeepAlive=yes',
-            '-o', 'ExitOnForwardFailure=yes',
-            '-o', 'ControlMaster=no',
-            '-o', 'ControlPath=none',
+            "--",
+            "-D",
+            f"127.0.0.1:{self.port}",
+            "-N",
+            "-o",
+            "ServerAliveInterval=30",
+            "-o",
+            "ServerAliveCountMax=3",
+            "-o",
+            "TCPKeepAlive=yes",
+            "-o",
+            "ExitOnForwardFailure=yes",
+            "-o",
+            "ControlMaster=no",
+            "-o",
+            "ControlPath=none",
         ]
 
-        gh_cmd = ['gh', 'codespace', 'ssh', '--codespace', self.codespace_name] + ssh_args
+        gh_cmd = ["gh", "codespace", "ssh", "--codespace", self.codespace_name] + ssh_args
 
         spec = {
-            'gh_cmd': gh_cmd,
-            'log_file': str(self.log_file),
-            'stop_file': str(self.stop_file),
-            'ready_file': str(self.ready_file),
-            'status_file': str(self.status_file),
-            'reconnect_delay': self.config.reconnect_delay,
-            'max_reconnect_delay': self.config.max_reconnect_delay,
-            'log_max_bytes': self.config.worker_log_max_bytes,
+            "gh_cmd": gh_cmd,
+            "log_file": str(self.log_file),
+            "stop_file": str(self.stop_file),
+            "ready_file": str(self.ready_file),
+            "status_file": str(self.status_file),
+            "reconnect_delay": self.config.reconnect_delay,
+            "max_reconnect_delay": self.config.max_reconnect_delay,
+            "log_max_bytes": self.config.worker_log_max_bytes,
         }
         self.spec_file.write_text(json.dumps(spec))
 
-        worker_cmd = [sys.executable, '-m', 'csproxy._worker', str(self.spec_file)]
+        worker_cmd = [sys.executable, "-m", "csproxy._worker", str(self.spec_file)]
 
         popen_kwargs = {}
-        if sys.platform == 'win32':
-            popen_kwargs['creationflags'] = (
+        if sys.platform == "win32":
+            popen_kwargs["creationflags"] = (
                 subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
             )
         else:
-            popen_kwargs['start_new_session'] = True
+            popen_kwargs["start_new_session"] = True
 
         # Redirect stderr to a file so we can surface it if the worker
         # crashes immediately (e.g., import error, bad spec). The child gets
         # its own dup of the fd at exec time, so the parent closes its copy on
         # context exit rather than leaking the handle for the worker's lifetime.
-        stderr_file = self.spec_file.with_suffix('.stderr')
-        with open(stderr_file, 'w') as stderr_fh:
+        stderr_file = self.spec_file.with_suffix(".stderr")
+        with open(stderr_file, "w") as stderr_fh:
             proc = subprocess.Popen(
                 worker_cmd,
                 stdout=subprocess.DEVNULL,
@@ -127,11 +139,11 @@ class SSHTunnel:
 
         self.state.add_tunnel(
             id=self.tunnel_id,
-            kind='ssh',
+            kind="ssh",
             codespace_name=self.codespace_name,
             port=self.port,
             pid=proc.pid,
-            status='starting',
+            status="starting",
             created=int(time.time()),
             failures=0,
             last_failure=0,
@@ -148,7 +160,7 @@ class SSHTunnel:
                 raise SSHTunnelError("Tunnel process exited immediately - check logs")
             self.logger.debug(f"Health check attempt {attempt} on port {self.port}...")
             if self.health_check():
-                self.state.update_tunnel(self.port, status='healthy')
+                self.state.update_tunnel(self.port, status="healthy")
                 break
         else:
             self.stop()
@@ -188,7 +200,7 @@ class SSHTunnel:
         self.pid_file.unlink(missing_ok=True)
         self.stop_file.unlink(missing_ok=True)
         self.spec_file.unlink(missing_ok=True)
-        self.spec_file.with_suffix('.stderr').unlink(missing_ok=True)
+        self.spec_file.with_suffix(".stderr").unlink(missing_ok=True)
         self.ready_file.unlink(missing_ok=True)
         self.status_file.unlink(missing_ok=True)
         self.state.remove_tunnel(port=self.port)
@@ -219,7 +231,7 @@ class SSHTunnel:
         self.pid_file.unlink(missing_ok=True)
         self.stop_file.unlink(missing_ok=True)
         self.spec_file.unlink(missing_ok=True)
-        self.spec_file.with_suffix('.stderr').unlink(missing_ok=True)
+        self.spec_file.with_suffix(".stderr").unlink(missing_ok=True)
         self.ready_file.unlink(missing_ok=True)
         self.status_file.unlink(missing_ok=True)
         self.state.remove_tunnel(port=self.port)
@@ -227,11 +239,10 @@ class SSHTunnel:
     def _kill_port_holders(self) -> None:
         """Kill processes listening on our SOCKS port (platform-specific)."""
         try:
-            if sys.platform == 'darwin':
+            if sys.platform == "darwin":
                 # lsof -ti:port gives PIDs
                 result = self.runner.run(
-                    ['lsof', '-ti', f':{self.port}'],
-                    capture_output=True, text=True, timeout=5
+                    ["lsof", "-ti", f":{self.port}"], capture_output=True, text=True, timeout=5
                 )
                 if result.returncode == 0:
                     for pid_str in result.stdout.strip().splitlines():
@@ -239,10 +250,9 @@ class SSHTunnel:
                             os.kill(int(pid_str), signal.SIGKILL)
                         except (ValueError, ProcessLookupError, PermissionError):
                             pass
-            elif sys.platform == 'linux':
+            elif sys.platform == "linux":
                 result = self.runner.run(
-                    ['fuser', '-k', f'{self.port}/tcp'],
-                    capture_output=True, timeout=5
+                    ["fuser", "-k", f"{self.port}/tcp"], capture_output=True, timeout=5
                 )
         except (OSError, subprocess.SubprocessError) as e:
             # Best-effort cleanup; surface at debug level so a stuck port is
@@ -254,7 +264,7 @@ class SSHTunnel:
         # If state says dead/crashed, trust that over PID existence
         # (prevents zombies where worker is alive but circuit breaker tripped)
         state_tunnel = self.state.get_tunnel_by_port(self.port)
-        if state_tunnel and state_tunnel.get('status') in ('dead', 'crashed'):
+        if state_tunnel and state_tunnel.get("status") in ("dead", "crashed"):
             self._cleanup_stale()
             return False
 
@@ -282,14 +292,18 @@ class SSHTunnel:
         health_url = self.config.health_check_url
         result = self.runner.run(
             [
-                'curl', '-s',
-                '--connect-timeout', str(timeout),
-                '--max-time', str(timeout + 2),
-                '--socks5-hostname', f'127.0.0.1:{self.port}',
+                "curl",
+                "-s",
+                "--connect-timeout",
+                str(timeout),
+                "--max-time",
+                str(timeout + 2),
+                "--socks5-hostname",
+                f"127.0.0.1:{self.port}",
                 health_url,
             ],
             capture_output=True,
-            timeout=timeout + 5
+            timeout=timeout + 5,
         )
         healthy = result.returncode == 0
         if healthy:
@@ -310,14 +324,17 @@ class SSHTunnel:
         health_url = self.config.health_check_url
         result = self.runner.run(
             [
-                'curl', '-s',
-                '--connect-timeout', '5',
-                '--socks5-hostname', f'127.0.0.1:{self.port}',
+                "curl",
+                "-s",
+                "--connect-timeout",
+                "5",
+                "--socks5-hostname",
+                f"127.0.0.1:{self.port}",
                 health_url,
             ],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
         return result.stdout.strip() if result.returncode == 0 else None
 
@@ -388,20 +405,18 @@ class HTTPProxyManager:
     def __init__(self, config: Config):
         self.config = config
         self.logger = get_logger()
-        self.conf_file = config.config_dir / 'tinyproxy.conf'
-        self.pid_file = config.config_dir / 'tinyproxy.pid'
+        self.conf_file = config.config_dir / "tinyproxy.conf"
+        self.pid_file = config.config_dir / "tinyproxy.pid"
 
     def _install_tinyproxy(self) -> None:
         """Attempt to install tinyproxy via apt-get."""
         self.logger.warning("tinyproxy not installed. Installing...")
         result = CommandRunner().run(
-            ['sudo', 'apt-get', 'install', '-y', 'tinyproxy'],
-            capture_output=True
+            ["sudo", "apt-get", "install", "-y", "tinyproxy"], capture_output=True
         )
         if result.returncode != 0:
             raise ProxyError(
-                "Failed to install tinyproxy. "
-                "Install manually: sudo apt-get install tinyproxy"
+                "Failed to install tinyproxy. " "Install manually: sudo apt-get install tinyproxy"
             )
 
     def _write_config(self) -> None:
@@ -431,27 +446,25 @@ Upstream socks5 127.0.0.1:{self.config.socks_port}
 
     def start(self) -> None:
         """Start HTTP proxy via tinyproxy."""
-        if not shutil.which('tinyproxy'):
+        if not shutil.which("tinyproxy"):
             self._install_tinyproxy()
 
         self._write_config()
 
         result = CommandRunner().run(
-            ['tinyproxy', '-c', str(self.conf_file)],
+            ["tinyproxy", "-c", str(self.conf_file)],
             capture_output=True,
             text=False,
         )
 
         if result.returncode != 0:
-            raise ProxyError(
-                f"tinyproxy failed to start: {result.stderr.decode().strip()}"
-            )
+            raise ProxyError(f"tinyproxy failed to start: {result.stderr.decode().strip()}")
 
         self.logger.info(f"HTTP proxy started on port {self.config.http_proxy_port}")
 
     def stop(self) -> None:
         """Stop tinyproxy if running."""
         try:
-            CommandRunner().run(['pkill', 'tinyproxy'], capture_output=True)
+            CommandRunner().run(["pkill", "tinyproxy"], capture_output=True)
         except FileNotFoundError:
             pass

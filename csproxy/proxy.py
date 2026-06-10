@@ -10,7 +10,6 @@ integration with common security tools.
 import os
 import time
 from pathlib import Path
-from typing import Optional
 
 from .github import GitHubManager
 from .runner import CommandRunner
@@ -19,8 +18,6 @@ from .chains import cmd_chain
 from .utils import (
     Config,
     GitHubAuthError,
-    ProxyError,
-    SSHTunnelError,
     check_dependencies,
     get_logger,
 )
@@ -29,8 +26,13 @@ from .utils import (
 from .tunnel import SSHTunnel, HTTPProxyManager  # noqa: F401
 from .codespace import CodespaceSelector  # noqa: F401
 from .display import (  # noqa: F401
-    print_env_exports, print_usage_examples, print_burp_config,
-    print_diagnostics, show_status, show_logs, show_help,
+    print_env_exports,
+    print_usage_examples,
+    print_burp_config,
+    print_diagnostics,
+    show_status,
+    show_logs,
+    show_help,
 )
 
 VERSION = "1.0.0"
@@ -48,7 +50,7 @@ class ProxychainsConfig:
     def generate(config: Config) -> None:
         """Generate proxychains.conf file."""
         logger = get_logger()
-        conf_file = config.config_dir / 'proxychains.conf'
+        conf_file = config.config_dir / "proxychains.conf"
 
         content = f"""# Proxychains configuration for cs-proxy
 # Generated on {time.strftime('%Y-%m-%d %H:%M:%S')}
@@ -71,9 +73,9 @@ socks5 127.0.0.1 {config.socks_port}
         conf_file.chmod(0o600)
         logger.info(f"Proxychains config generated: {conf_file}")
 
-        print(f"\nUsage:")
+        print("\nUsage:")
         print(f"  proxychains4 -f {conf_file} <command>")
-        print(f"  # or add alias:")
+        print("  # or add alias:")
         print(f"  alias pcs='proxychains4 -f {conf_file}'")
 
 
@@ -85,34 +87,39 @@ socks5 127.0.0.1 {config.socks_port}
 def generate_ssh_key(config: Config) -> None:
     """Generate SSH keypair for Codespace access."""
     logger = get_logger()
-    key_file = config.config_dir / 'codespace_key'
+    key_file = config.config_dir / "codespace_key"
 
     if key_file.exists():
         logger.warning(f"SSH key already exists at {key_file}")
         answer = input("Regenerate? [y/N] ").strip().lower()
-        if answer != 'y':
+        if answer != "y":
             return
 
     logger.info("Generating SSH key for Codespace access...")
     runner = CommandRunner()
 
-    datestamp = time.strftime('%Y%m%d')
+    datestamp = time.strftime("%Y%m%d")
     result = runner.run(
         [
-            'ssh-keygen', '-t', 'ed25519',
-            '-f', str(key_file),
-            '-N', '',
-            '-C', f'cs-proxy-{datestamp}'
+            "ssh-keygen",
+            "-t",
+            "ed25519",
+            "-f",
+            str(key_file),
+            "-N",
+            "",
+            "-C",
+            f"cs-proxy-{datestamp}",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode != 0:
         raise RuntimeError(f"ssh-keygen failed: {result.stderr}")
 
     key_file.chmod(0o600)
-    pub_key_file = key_file.with_suffix('.pub')
+    pub_key_file = key_file.with_suffix(".pub")
     if pub_key_file.exists():
         pub_key_file.chmod(0o644)
 
@@ -139,17 +146,19 @@ def set_github_token(token: str, config: Config, gh: GitHubManager) -> None:
     if not token:
         raise ValueError("No token provided")
 
-    if not (token.startswith('ghp_') or token.startswith('ghs_') or token.startswith('github_pat_')):
+    if not (
+        token.startswith("ghp_") or token.startswith("ghs_") or token.startswith("github_pat_")
+    ):
         logger.warning("Token doesn't match expected format (ghp_*, ghs_*, or github_pat_*)")
         answer = input("Continue anyway? [y/N] ").strip().lower()
-        if answer != 'y':
+        if answer != "y":
             raise ValueError("Aborted")
 
     logger.info("Validating token...")
-    os.environ['GH_TOKEN'] = token
+    os.environ["GH_TOKEN"] = token
     gh.runner.redacted_values = tuple([*gh.runner.redacted_values, token])
 
-    result = gh.runner.run(['gh', 'auth', 'status'], capture_output=True, env={'GH_TOKEN': token})
+    result = gh.runner.run(["gh", "auth", "status"], capture_output=True, env={"GH_TOKEN": token})
     if result.returncode != 0:
         raise GitHubAuthError("Token validation failed. Check scopes: codespace, repo")
 
@@ -165,7 +174,7 @@ def set_github_token(token: str, config: Config, gh: GitHubManager) -> None:
 def setup_split_tunnel(config: Config) -> None:
     """Interactively set up split tunneling for specific targets."""
     logger = get_logger()
-    target_file = config.config_dir / 'targets.txt'
+    target_file = config.config_dir / "targets.txt"
 
     print("Split tunneling routes specific targets through the proxy.")
     print("Enter target domains/IPs (one per line, empty line to finish):\n")
@@ -181,7 +190,7 @@ def setup_split_tunnel(config: Config) -> None:
         logger.warning("No targets specified")
         return
 
-    target_file.write_text('\n'.join(targets) + '\n')
+    target_file.write_text("\n".join(targets) + "\n")
     logger.info(f"Targets saved to {target_file}")
 
     print(f"""
@@ -213,7 +222,7 @@ def _get_codespace(config: Config, gh: GitHubManager) -> str:
 
     selector = CodespaceSelector(gh, config)
     name = selector.select()
-    config.set('codespace_name', name)
+    config.set("codespace_name", name)
     return name
 
 
@@ -221,7 +230,7 @@ def _ensure_codespaces(config: Config, gh: GitHubManager, count: int) -> list:
     """Ensure at least `count` codespaces exist, creating if needed."""
     logger = get_logger()
     existing = gh.list_codespaces()
-    names = [cs['name'] for cs in existing[:count]]
+    names = [cs["name"] for cs in existing[:count]]
 
     for name in names:
         logger.info(f"Using existing codespace: {name}")
@@ -229,9 +238,10 @@ def _ensure_codespaces(config: Config, gh: GitHubManager, count: int) -> list:
     locations = config.locations
     while len(names) < count:
         idx = len(names)
-        location = locations[idx] if idx < len(locations) else (locations[0] if locations else '')
-        logger.info(f"Creating codespace {idx+1}/{count}"
-                    + (f" in {location}" if location else "") + "...")
+        location = locations[idx] if idx < len(locations) else (locations[0] if locations else "")
+        logger.info(
+            f"Creating codespace {idx+1}/{count}" + (f" in {location}" if location else "") + "..."
+        )
         selector = CodespaceSelector(gh, config)
         name = selector._create_and_wait(CodespaceSelector.BLANK_REPO, location=location)
         names.append(name)
@@ -242,9 +252,9 @@ def _ensure_codespaces(config: Config, gh: GitHubManager, count: int) -> list:
 def cmd_start(args, config: Config, gh: GitHubManager) -> int:
     """Start SOCKS5 proxy tunnel."""
     logger = get_logger()
-    check_dependencies(['gh', 'ssh', 'curl'])
+    check_dependencies(["gh", "ssh", "curl"])
 
-    if getattr(config, '_dry_run', False):
+    if getattr(config, "_dry_run", False):
         names = config.codespace_names or ([config.codespace_name] if config.codespace_name else [])
         if not names:
             print("[dry-run] No codespace configured. Would prompt for selection.")
@@ -257,14 +267,14 @@ def cmd_start(args, config: Config, gh: GitHubManager) -> int:
 
     gh.check_auth()
 
-    num_proxies = min(config.get('num_proxies', 1), 2)
+    num_proxies = min(config.get("num_proxies", 1), 2)
     selector = CodespaceSelector(gh, config)
 
     if num_proxies > 1:
         names = _ensure_codespaces(config, gh, num_proxies)
         codespace = names[0]
-        config.set('codespace_name', codespace)
-        config.set('codespace_names', names)
+        config.set("codespace_name", codespace)
+        config.set("codespace_names", names)
         logger.info(f"Using {len(names)} codespace(s)")
         for i, name in enumerate(names):
             port = config.socks_port + i
@@ -276,13 +286,14 @@ def cmd_start(args, config: Config, gh: GitHubManager) -> int:
             # First start: select or create a codespace
             codespace = _get_codespace(config, gh)
             tracked = [codespace]
-            config.set('codespace_name', codespace)
-            config.set('codespace_names', tracked)
+            config.set("codespace_name", codespace)
+            config.set("codespace_names", tracked)
         else:
             # Check if all tracked codespaces already have running tunnels
             all_running = all(
-                SSHTunnel(config, n, port=config.socks_port + i,
-                          pid_suffix=('' if i == 0 else str(i + 1))).is_running()
+                SSHTunnel(
+                    config, n, port=config.socks_port + i, pid_suffix=("" if i == 0 else str(i + 1))
+                ).is_running()
                 for i, n in enumerate(tracked)
             )
             if all_running:
@@ -290,22 +301,22 @@ def cmd_start(args, config: Config, gh: GitHubManager) -> int:
                 logger.info("All managed Codespaces already have tunnels. Adding a new one...")
                 new_name = selector._create_interactively()
                 tracked.append(new_name)
-                config.set('codespace_names', tracked)
-            config.set('codespace_name', tracked[0])
+                config.set("codespace_names", tracked)
+            config.set("codespace_name", tracked[0])
 
     # Start tunnels for any tracked codespace that isn't already running
     for i, name in enumerate(config.codespace_names):
-        suffix = '' if i == 0 else str(i + 1)
+        suffix = "" if i == 0 else str(i + 1)
         port = config.socks_port + i
         t = SSHTunnel(config, name, port=port, pid_suffix=suffix)
         if not t.is_running():
-            if getattr(config, '_dry_run', False):
+            if getattr(config, "_dry_run", False):
                 print(f"[dry-run] Would start tunnel {name} on port {port}")
                 continue
             selector.ensure_running(name)
             t.start(start_timeout=30 if i == 0 else 90)
 
-    if getattr(config, '_dry_run', False):
+    if getattr(config, "_dry_run", False):
         print("[dry-run] Would generate proxychains config and save settings")
         return 0
 
@@ -318,19 +329,19 @@ def cmd_start(args, config: Config, gh: GitHubManager) -> int:
 
 def cmd_stop(args, config: Config, gh: GitHubManager) -> int:
     """Stop proxy tunnel."""
-    if getattr(config, '_dry_run', False):
+    if getattr(config, "_dry_run", False):
         print(f"[dry-run] Would stop tunnel for {config.codespace_name or 'active codespace'}")
         for i in range(1, len(config.codespace_names)):
             print(f"[dry-run] Would stop tunnel on port {config.socks_port + i}")
         print("[dry-run] Would stop HTTP proxy")
         return 0
 
-    tunnel = SSHTunnel(config, config.codespace_name or '')
+    tunnel = SSHTunnel(config, config.codespace_name or "")
     tunnel.stop()
 
     # Stop tunnels for any additional codespaces
     for i in range(1, len(config.codespace_names)):
-        SSHTunnel(config, '', port=config.socks_port + i, pid_suffix=str(i + 1)).stop()
+        SSHTunnel(config, "", port=config.socks_port + i, pid_suffix=str(i + 1)).stop()
 
     http = HTTPProxyManager(config)
     http.stop()
@@ -346,8 +357,9 @@ def cmd_restart(args, config: Config, gh: GitHubManager) -> int:
 
 def cmd_status(args, config: Config, gh: GitHubManager) -> int:
     """Show proxy status. Pass --watch or -w for auto-refresh."""
-    if args and ('--watch' in args or '-w' in args):
+    if args and ("--watch" in args or "-w" in args):
         from .display import watch_status
+
         watch_status(config, gh)
         return 0
     show_status(config, gh)
@@ -356,7 +368,7 @@ def cmd_status(args, config: Config, gh: GitHubManager) -> int:
 
 def cmd_list(args, config: Config, gh: GitHubManager) -> int:
     """List Codespaces."""
-    check_dependencies(['gh'])
+    check_dependencies(["gh"])
     gh.check_auth()
 
     get_logger().info("Fetching available Codespaces...")
@@ -369,12 +381,12 @@ def cmd_list(args, config: Config, gh: GitHubManager) -> int:
 
     header = f"{'NAME':<40} {'STATE':<15} {'REPOSITORY':<35} {'CREATED'}"
     print(header)
-    print('-' * len(header))
+    print("-" * len(header))
     for cs in codespaces:
-        name = cs.get('name', '')[:38]
-        state = cs.get('state', '')[:13]
-        repo = cs.get('repository', '')[:33]
-        created = cs.get('createdAt', '')[:10]
+        name = cs.get("name", "")[:38]
+        state = cs.get("state", "")[:13]
+        repo = cs.get("repository", "")[:33]
+        created = cs.get("createdAt", "")[:10]
         print(f"{name:<40} {state:<15} {repo:<35} {created}")
     print()
     return 0
@@ -382,7 +394,7 @@ def cmd_list(args, config: Config, gh: GitHubManager) -> int:
 
 def cmd_create(args, config: Config, gh: GitHubManager) -> int:
     """Create a new Codespace and add it to the tracked list."""
-    check_dependencies(['gh'])
+    check_dependencies(["gh"])
     gh.check_auth()
 
     selector = CodespaceSelector(gh, config)
@@ -391,8 +403,8 @@ def cmd_create(args, config: Config, gh: GitHubManager) -> int:
     names = list(config.codespace_names)
     if name not in names:
         names.append(name)
-    config.set('codespace_names', names)
-    config.set('codespace_name', name)
+    config.set("codespace_names", names)
+    config.set("codespace_name", name)
     config.save()
     return 0
 
@@ -406,7 +418,7 @@ def cmd_set(args, config: Config, gh: GitHubManager) -> int:
         logger.error("Usage: cs-proxy set <codespace-name>")
         return 1
 
-    config.set('codespace_name', codespace_name)
+    config.set("codespace_name", codespace_name)
     config.save()
     logger.info(f"Codespace set to: {codespace_name}")
     return 0
@@ -445,7 +457,7 @@ def cmd_keygen(args, config: Config, gh: GitHubManager) -> int:
 
 def cmd_config(args, config: Config, gh: GitHubManager) -> int:
     """Open config file in editor."""
-    editor = os.environ.get('EDITOR', 'nano')
+    editor = os.environ.get("EDITOR", "nano")
     os.execvp(editor, [editor, str(config.config_file)])
     return 0
 
@@ -481,8 +493,9 @@ def _pick_codespace(args, config: Config, gh: GitHubManager) -> str:
             idx = int(arg) - 1
             if 0 <= idx < len(names):
                 return names[idx]
-            raise ValueError(f"No codespace at index {arg}. "
-                             f"Tracked: {len(names)} ({', '.join(names)})")
+            raise ValueError(
+                f"No codespace at index {arg}. " f"Tracked: {len(names)} ({', '.join(names)})"
+            )
         return arg  # treat as explicit name
 
     if len(names) > 1:
@@ -503,7 +516,7 @@ def _pick_codespace(args, config: Config, gh: GitHubManager) -> str:
 
 def cmd_ssh(args, config: Config, gh: GitHubManager) -> int:
     """Open interactive SSH session in Codespace."""
-    check_dependencies(['gh', 'ssh'])
+    check_dependencies(["gh", "ssh"])
     gh.check_auth()
 
     codespace = _pick_codespace(args, config, gh)
@@ -511,13 +524,13 @@ def cmd_ssh(args, config: Config, gh: GitHubManager) -> int:
     selector.ensure_running(codespace)
 
     get_logger().info(f"Connecting to {codespace}...")
-    os.execvp('gh', ['gh', 'codespace', 'ssh', '--codespace', codespace])
+    os.execvp("gh", ["gh", "codespace", "ssh", "--codespace", codespace])
     return 0
 
 
 def cmd_run(args, config: Config, gh: GitHubManager) -> int:
     """Run a command in the Codespace."""
-    check_dependencies(['gh', 'ssh'])
+    check_dependencies(["gh", "ssh"])
     gh.check_auth()
 
     if not args:
@@ -529,7 +542,7 @@ def cmd_run(args, config: Config, gh: GitHubManager) -> int:
     selector.ensure_running(codespace)
 
     result = gh.runner.run(
-        ['gh', 'codespace', 'ssh', '--codespace', codespace, '--'] + args,
+        ["gh", "codespace", "ssh", "--codespace", codespace, "--"] + args,
         capture_output=False,
         timeout=None,
     )
@@ -538,7 +551,7 @@ def cmd_run(args, config: Config, gh: GitHubManager) -> int:
 
 def cmd_name(args, config: Config, gh: GitHubManager) -> int:
     """Print current Codespace name."""
-    check_dependencies(['gh'])
+    check_dependencies(["gh"])
     gh.check_auth()
 
     codespace = _get_codespace(config, gh)
@@ -549,21 +562,21 @@ def cmd_name(args, config: Config, gh: GitHubManager) -> int:
 def cmd_teardown(args, config: Config, gh: GitHubManager) -> int:
     """Stop proxy and all managed Codespaces (saves compute, keeps storage)."""
     logger = get_logger()
-    check_dependencies(['gh'])
+    check_dependencies(["gh"])
     gh.check_auth()
 
     # Clean up every tunnel in state, not just config-tracked ones
     state = State(config.config_dir)
-    tunnels = state.get_tunnels(kind='ssh')
+    tunnels = state.get_tunnels(kind="ssh")
     for t in tunnels:
-        port = t.get('port', config.socks_port)
-        cs_name = t.get('codespace_name', '')
+        port = t.get("port", config.socks_port)
+        cs_name = t.get("codespace_name", "")
         tunnel = SSHTunnel(config, cs_name, port=port)
         tunnel.cleanup()
         logger.info(f"Stopped tunnel :{port}")
 
     # Also clean up any orphaned artifacts in workers/ directory
-    workers_dir = config.config_dir / 'workers'
+    workers_dir = config.config_dir / "workers"
     if workers_dir.exists():
         for f in workers_dir.iterdir():
             f.unlink(missing_ok=True)
@@ -572,9 +585,7 @@ def cmd_teardown(args, config: Config, gh: GitHubManager) -> int:
     if all_names:
         for name in all_names:
             logger.info(f"Stopping Codespace: {name}")
-            gh.run_gh_command(
-                ['codespace', 'stop', '--codespace', name], check=False
-            )
+            gh.run_gh_command(["codespace", "stop", "--codespace", name], check=False)
         logger.info(f"Stopped {len(all_names)} codespace(s) (still exist, no compute billing)")
     else:
         logger.warning("No Codespace configured. Use: gh codespace stop -c <name>")
@@ -585,26 +596,28 @@ def cmd_teardown(args, config: Config, gh: GitHubManager) -> int:
 def cmd_down(args, config: Config, gh: GitHubManager) -> int:
     """Stop proxy and permanently delete all managed Codespaces."""
     logger = get_logger()
-    check_dependencies(['gh'])
+    check_dependencies(["gh"])
     gh.check_auth()
 
     # Step 1: aggressive cleanup of every tunnel in state
     state = State(config.config_dir)
-    tunnels = state.get_tunnels(kind='ssh')
+    tunnels = state.get_tunnels(kind="ssh")
     for t in tunnels:
-        port = t.get('port', config.socks_port)
-        cs_name = t.get('codespace_name', '')
+        port = t.get("port", config.socks_port)
+        cs_name = t.get("codespace_name", "")
         tunnel = SSHTunnel(config, cs_name, port=port)
         tunnel.cleanup()
         logger.info(f"Cleaned up tunnel :{port}")
 
     # Also clean up any orphaned artifacts in workers/ directory
-    workers_dir = config.config_dir / 'workers'
+    workers_dir = config.config_dir / "workers"
     if workers_dir.exists():
         for f in workers_dir.iterdir():
             f.unlink(missing_ok=True)
 
-    all_names = list(config.codespace_names) or ([config.codespace_name] if config.codespace_name else [])
+    all_names = list(config.codespace_names) or (
+        [config.codespace_name] if config.codespace_name else []
+    )
     if not all_names:
         logger.warning("No Codespace configured.")
         return 0
@@ -612,9 +625,7 @@ def cmd_down(args, config: Config, gh: GitHubManager) -> int:
     # Step 2: stop codespaces first (clean shutdown before delete)
     for name in all_names:
         logger.info(f"Stopping Codespace: {name}")
-        gh.run_gh_command(
-            ['codespace', 'stop', '--codespace', name], check=False
-        )
+        gh.run_gh_command(["codespace", "stop", "--codespace", name], check=False)
 
     # Step 3: confirm deletion
     if len(all_names) > 1:
@@ -624,7 +635,7 @@ def cmd_down(args, config: Config, gh: GitHubManager) -> int:
     else:
         print(f"\nThis will PERMANENTLY delete: {all_names[0]}")
     confirm = input("Are you sure? [y/N] ").strip().lower()
-    if confirm != 'y':
+    if confirm != "y":
         logger.info("Cancelled — codespaces were stopped but not deleted.")
         return 0
 
@@ -635,8 +646,8 @@ def cmd_down(args, config: Config, gh: GitHubManager) -> int:
 
     # Step 5: wipe local state and config tracking
     state.clear_all()
-    config.set('codespace_name', '')
-    config.set('codespace_names', [])
+    config.set("codespace_name", "")
+    config.set("codespace_names", [])
     config.save()
     logger.info(f"Deleted {len(all_names)} codespace(s)")
     return 0
@@ -645,7 +656,7 @@ def cmd_down(args, config: Config, gh: GitHubManager) -> int:
 def cmd_delete(args, config: Config, gh: GitHubManager) -> int:
     """Delete Codespace(s) permanently."""
     logger = get_logger()
-    check_dependencies(['gh'])
+    check_dependencies(["gh"])
     gh.check_auth()
 
     # List all codespaces to let user choose
@@ -654,7 +665,7 @@ def cmd_delete(args, config: Config, gh: GitHubManager) -> int:
         logger.info("No codespaces found")
         return 0
 
-    names = [cs['name'] for cs in codespaces]
+    names = [cs["name"] for cs in codespaces]
 
     if len(names) > 1:
         print(f"\nYou have {len(names)} codespaces:")
@@ -669,7 +680,7 @@ def cmd_delete(args, config: Config, gh: GitHubManager) -> int:
         print()
         choice = input("Choice: ").strip().lower()
 
-        if choice == 'a':
+        if choice == "a":
             to_delete = names
         elif choice.isdigit() and 1 <= int(choice) <= len(names):
             to_delete = [names[int(choice) - 1]]
@@ -680,7 +691,7 @@ def cmd_delete(args, config: Config, gh: GitHubManager) -> int:
         to_delete = names
         print(f"\nThis will PERMANENTLY delete: {to_delete[0]}")
         confirm = input("Are you sure? [y/N] ").strip().lower()
-        if confirm != 'y':
+        if confirm != "y":
             logger.info("Cancelled")
             return 0
 
@@ -693,8 +704,8 @@ def cmd_delete(args, config: Config, gh: GitHubManager) -> int:
         gh.delete_codespace(name, force=True)
 
     remaining = [n for n in config.codespace_names if n not in to_delete]
-    config.set('codespace_name', remaining[0] if remaining else '')
-    config.set('codespace_names', remaining)
+    config.set("codespace_name", remaining[0] if remaining else "")
+    config.set("codespace_names", remaining)
     config.save()
     return 0
 
@@ -702,7 +713,7 @@ def cmd_delete(args, config: Config, gh: GitHubManager) -> int:
 def cmd_token(args, config: Config, gh: GitHubManager) -> int:
     """Set GitHub token."""
     config.ensure_dirs()
-    token = args[0] if args else ''
+    token = args[0] if args else ""
     set_github_token(token, config, gh)
     return 0
 
@@ -712,7 +723,7 @@ def cmd_aliases(args, config: Config, gh: GitHubManager) -> int:
     logger = get_logger()
     home = Path.home()
 
-    proxychains_conf = '${CS_PROXY_CONFIG_DIR:-$HOME/.config/cs-proxy}/proxychains.conf'
+    proxychains_conf = "${CS_PROXY_CONFIG_DIR:-$HOME/.config/cs-proxy}/proxychains.conf"
     alias_block = f"""\n# cs-proxy aliases
 alias proxy-start='cs-proxy start'
 alias proxy-stop='cs-proxy stop'
@@ -721,17 +732,17 @@ alias pcs='proxychains4 -f {proxychains_conf}'
 alias cs-wg='sudo env "PATH=$PATH" cs-wg'
 """
 
-    rc_files = [f for f in [home / '.bashrc', home / '.zshrc'] if f.exists()]
+    rc_files = [f for f in [home / ".bashrc", home / ".zshrc"] if f.exists()]
     if not rc_files:
-        rc_files = [home / '.bashrc']
+        rc_files = [home / ".bashrc"]
 
     wrote = []
     for rc in rc_files:
-        existing = rc.read_text() if rc.exists() else ''
-        if 'cs-proxy aliases' in existing:
+        existing = rc.read_text() if rc.exists() else ""
+        if "cs-proxy aliases" in existing:
             logger.info(f"Aliases already present in {rc}")
             continue
-        with rc.open('a') as f:
+        with rc.open("a") as f:
             f.write(alias_block)
         wrote.append(rc)
         logger.info(f"Added aliases to {rc}")
@@ -762,8 +773,9 @@ def cmd_pac(args, config: Config, gh: GitHubManager) -> int:
 
 def cmd_completion(args, config: Config, gh: GitHubManager) -> int:
     """Generate shell completion script."""
-    shell = args[0] if args else 'bash'
+    shell = args[0] if args else "bash"
     from .completion import generate_completion
+
     script = generate_completion(shell)
     if "Unsupported shell" in script:
         get_logger().error(f"Unsupported shell: {shell}. Supported: bash, zsh")
@@ -925,37 +937,37 @@ def cmd_tui(args, config: Config, gh: GitHubManager) -> int:
 
 
 COMMANDS = {
-    'start':        cmd_start,
-    'stop':         cmd_stop,
-    'restart':      cmd_restart,
-    'status':       cmd_status,
-    'list':         cmd_list,
-    'create':       cmd_create,
-    'set':          cmd_set,
-    'http':         cmd_http,
-    'proxychains':  cmd_proxychains,
-    'env':          cmd_env,
-    'burp':         cmd_burp,
-    'keygen':       cmd_keygen,
-    'config':       cmd_config,
-    'logs':         cmd_logs,
-    'split':        cmd_split,
-    'ssh':          cmd_ssh,
-    'run':          cmd_run,
-    'name':         cmd_name,
-    'teardown':     cmd_teardown,
-    'down':         cmd_down,
-    'delete':       cmd_delete,
-    'rm':           cmd_delete,     # Alias
-    'token':        cmd_token,
-    'aliases':      cmd_aliases,
-    'pac':          cmd_pac,
-    'completion':   cmd_completion,
-    'account':      cmd_account,
-    'check':        cmd_check,
-    'doctor':       cmd_doctor,
-    'pool':         cmd_pool,
-    'chain':        cmd_chain,
-    'tui':          cmd_tui,
-    'help':         cmd_help,
+    "start": cmd_start,
+    "stop": cmd_stop,
+    "restart": cmd_restart,
+    "status": cmd_status,
+    "list": cmd_list,
+    "create": cmd_create,
+    "set": cmd_set,
+    "http": cmd_http,
+    "proxychains": cmd_proxychains,
+    "env": cmd_env,
+    "burp": cmd_burp,
+    "keygen": cmd_keygen,
+    "config": cmd_config,
+    "logs": cmd_logs,
+    "split": cmd_split,
+    "ssh": cmd_ssh,
+    "run": cmd_run,
+    "name": cmd_name,
+    "teardown": cmd_teardown,
+    "down": cmd_down,
+    "delete": cmd_delete,
+    "rm": cmd_delete,  # Alias
+    "token": cmd_token,
+    "aliases": cmd_aliases,
+    "pac": cmd_pac,
+    "completion": cmd_completion,
+    "account": cmd_account,
+    "check": cmd_check,
+    "doctor": cmd_doctor,
+    "pool": cmd_pool,
+    "chain": cmd_chain,
+    "tui": cmd_tui,
+    "help": cmd_help,
 }

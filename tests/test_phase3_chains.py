@@ -158,15 +158,22 @@ def test_chain_start_rolls_back_on_forward_timeout(tmp_path):
     exit_forward = FakeProcess(101)
     socks_forward = FakeProcess(102)
 
-    with patch("csproxy.chains._ensure_chain_hops", return_value=config.get("chains")["eu-us"]["hops"]), \
-         patch("csproxy.chains._upload"), \
-         patch("csproxy.chains._upload_secret_file"), \
-         patch("csproxy.chains._start_remote_script"), \
-         patch("csproxy.chains._cleanup_remote_script") as cleanup_script, \
-         patch("csproxy.chains._cleanup_remote_file") as cleanup_file, \
-         patch("csproxy.chains._set_port_private") as set_port_private, \
-         patch("csproxy.chains.subprocess.Popen", side_effect=[exit_forward, socks_forward]), \
-         patch("csproxy.chains._wait_local_forward", side_effect=[None, RuntimeError("Timed out waiting")]):
+    with (
+        patch(
+            "csproxy.chains._ensure_chain_hops", return_value=config.get("chains")["eu-us"]["hops"]
+        ),
+        patch("csproxy.chains._upload"),
+        patch("csproxy.chains._upload_secret_file"),
+        patch("csproxy.chains._start_remote_script"),
+        patch("csproxy.chains._cleanup_remote_script") as cleanup_script,
+        patch("csproxy.chains._cleanup_remote_file") as cleanup_file,
+        patch("csproxy.chains._set_port_private") as set_port_private,
+        patch("csproxy.chains.subprocess.Popen", side_effect=[exit_forward, socks_forward]),
+        patch(
+            "csproxy.chains._wait_local_forward",
+            side_effect=[None, RuntimeError("Timed out waiting")],
+        ),
+    ):
         with pytest.raises(RuntimeError, match="Timed out waiting"):
             _cmd_chain_start(parsed, config, gh)
 
@@ -202,8 +209,10 @@ def test_start_remote_script_places_env_before_nohup():
 
     gh = MagicMock()
 
-    with patch("csproxy.chains._ssh", return_value=MagicMock(returncode=0)) as ssh, \
-         patch("csproxy.chains.time.sleep"):
+    with (
+        patch("csproxy.chains._ssh", return_value=MagicMock(returncode=0)) as ssh,
+        patch("csproxy.chains.time.sleep"),
+    ):
         _start_remote_script(
             gh,
             "fake-cs",
@@ -260,8 +269,10 @@ def test_chain_stop_sets_ports_private_and_removes_artifacts(tmp_path):
 
     gh = MagicMock()
 
-    with patch("csproxy.chains._ssh") as ssh, \
-         patch("csproxy.chains._set_port_private") as set_port_private:
+    with (
+        patch("csproxy.chains._ssh") as ssh,
+        patch("csproxy.chains._set_port_private") as set_port_private,
+    ):
         result = _cmd_chain_stop(SimpleNamespace(name="livews"), config, gh)
 
     assert result == 0

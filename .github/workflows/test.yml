@@ -12,9 +12,8 @@ permissions:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    # Advisory for now: the existing tree has formatting/lint/type debt.
-    # These steps report issues without failing the build; flip
-    # continue-on-error to false per tool as the backlog is burned down.
+    # black and flake8 are now blocking (the tree is clean). mypy stays
+    # advisory until its remaining type-annotation debt is burned down.
     steps:
       - uses: actions/checkout@v6
 
@@ -29,11 +28,9 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Check formatting (black)
-        continue-on-error: true
         run: black --check csproxy tests
 
       - name: Lint (flake8)
-        continue-on-error: true
         run: flake8 csproxy tests
 
       - name: Type check (mypy)

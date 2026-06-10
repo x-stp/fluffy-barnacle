@@ -34,14 +34,14 @@ class GitHubManager:
             config_dir: Configuration directory (default: ~/.config/cs-proxy)
         """
         self.logger = get_logger()
-        config_dir_override = os.environ.get('CS_PROXY_CONFIG_DIR')
+        config_dir_override = os.environ.get("CS_PROXY_CONFIG_DIR")
         if config_dir is not None:
             self.config_dir = Path(config_dir)
         elif config_dir_override:
             self.config_dir = Path(config_dir_override).expanduser()
         else:
-            self.config_dir = Path.home() / '.config' / 'cs-proxy'
-        self.token_file = self.config_dir / 'gh_token'
+            self.config_dir = Path.home() / ".config" / "cs-proxy"
+        self.token_file = self.config_dir / "gh_token"
         self._token = None
         self.account = account
         self.runner = runner or CommandRunner()
@@ -76,7 +76,7 @@ class GitHubManager:
                 self._register_redaction(token)
                 return token
 
-        token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+        token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
         if token:
             self.logger.debug("Using GH_TOKEN from environment")
             self._token = token
@@ -140,12 +140,12 @@ class GitHubManager:
         # Set token in environment for gh CLI
         env = None
         if token:
-            env = {'GH_TOKEN': token}
+            env = {"GH_TOKEN": token}
 
         # Check if we have valid auth
         try:
             result = self.runner.gh(
-                ['auth', 'status'],
+                ["auth", "status"],
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -159,7 +159,9 @@ class GitHubManager:
         except subprocess.TimeoutExpired:
             self.logger.error("GitHub auth check timed out")
         except FileNotFoundError:
-            raise GitHubAuthError("GitHub CLI (gh) not found. Install from: https://cli.github.com/")
+            raise GitHubAuthError(
+                "GitHub CLI (gh) not found. Install from: https://cli.github.com/"
+            )
 
         # Authentication failed
         if token:
@@ -195,7 +197,7 @@ class GitHubManager:
             >>> result = gh.run_gh_command(['codespace', 'list', '--json', 'name'])
             >>> codespaces = json.loads(result.stdout)
         """
-        cmd = ['gh'] + args
+        cmd = ["gh"] + args
 
         self.logger.debug(f"Running: {' '.join(cmd)}")
 
@@ -203,7 +205,7 @@ class GitHubManager:
             env = None
             token = self.load_token()
             if token:
-                env = {'GH_TOKEN': token}
+                env = {"GH_TOKEN": token}
             result = self.runner.run(
                 cmd,
                 capture_output=True,
@@ -215,8 +217,10 @@ class GitHubManager:
             return result
 
         except FileNotFoundError:
-            raise FileNotFoundError("GitHub CLI (gh) not found. Install from: https://cli.github.com/")
-        except subprocess.TimeoutExpired as e:
+            raise FileNotFoundError(
+                "GitHub CLI (gh) not found. Install from: https://cli.github.com/"
+            )
+        except subprocess.TimeoutExpired:
             self.logger.error(f"Command timed out: {' '.join(cmd)}")
             raise
 
@@ -236,7 +240,9 @@ class GitHubManager:
             >>> for cs in codespaces:
             ...     print(f"{cs['name']}: {cs['state']}")
         """
-        result = self.run_gh_command(['codespace', 'list', '--json', 'name,state,repository,createdAt'])
+        result = self.run_gh_command(
+            ["codespace", "list", "--json", "name,state,repository,createdAt"]
+        )
         return json.loads(result.stdout)
 
     def get_codespace(self, name: str) -> Optional[dict]:
@@ -257,11 +263,11 @@ class GitHubManager:
         """
         codespaces = self.list_codespaces()
         for cs in codespaces:
-            if cs['name'] == name:
+            if cs["name"] == name:
                 return cs
         return None
 
-    def create_codespace(self, repo: Optional[str] = None, machine: str = '2-core') -> dict:
+    def create_codespace(self, repo: Optional[str] = None, machine: str = "2-core") -> dict:
         """
         Create a new Codespace.
 
@@ -275,10 +281,10 @@ class GitHubManager:
         Raises:
             subprocess.CalledProcessError: If creation fails
         """
-        args = ['codespace', 'create', '--machine', machine, '--json', 'name,state']
+        args = ["codespace", "create", "--machine", machine, "--json", "name,state"]
 
         if repo:
-            args.extend(['--repo', repo])
+            args.extend(["--repo", repo])
 
         self.logger.info(f"Creating new Codespace (machine: {machine})...")
         result = self.run_gh_command(args)
@@ -298,10 +304,10 @@ class GitHubManager:
         Raises:
             subprocess.CalledProcessError: If deletion fails
         """
-        args = ['codespace', 'delete', '--codespace', name]
+        args = ["codespace", "delete", "--codespace", name]
 
         if force:
-            args.append('--force')
+            args.append("--force")
 
         self.logger.info(f"Deleting Codespace: {name}")
         self.run_gh_command(args)
@@ -318,7 +324,7 @@ class GitHubManager:
             subprocess.CalledProcessError: If start fails
         """
         self.logger.info(f"Starting Codespace: {name}")
-        self.run_gh_command(['api', f'/user/codespaces/{name}/start', '-X', 'POST'])
+        self.run_gh_command(["api", f"/user/codespaces/{name}/start", "-X", "POST"])
 
     def stop_codespace(self, name: str) -> None:
         """
@@ -331,9 +337,11 @@ class GitHubManager:
             subprocess.CalledProcessError: If stop fails
         """
         self.logger.info(f"Stopping Codespace: {name}")
-        self.run_gh_command(['codespace', 'stop', '--codespace', name])
+        self.run_gh_command(["codespace", "stop", "--codespace", name])
 
-    def ssh_command(self, name: str, command: Optional[list[str]] = None) -> subprocess.CompletedProcess:
+    def ssh_command(
+        self, name: str, command: Optional[list[str]] = None
+    ) -> subprocess.CompletedProcess:
         """
         Execute command via SSH in Codespace.
 
@@ -352,10 +360,10 @@ class GitHubManager:
             >>> result = gh.ssh_command('my-codespace', ['whoami'])
             >>> print(result.stdout)
         """
-        args = ['codespace', 'ssh', '--codespace', name]
+        args = ["codespace", "ssh", "--codespace", name]
 
         if command:
-            args.append('--')
+            args.append("--")
             args.extend(command)
 
         return self.run_gh_command(args)

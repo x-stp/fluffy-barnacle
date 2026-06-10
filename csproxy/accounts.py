@@ -32,9 +32,7 @@ class GitHubAccount:
         """Return the token or raise a config error with a safe message."""
         token = self.token
         if not token:
-            raise ConfigError(
-                f"Account '{self.name}' requires ${self.token_env} to be set"
-            )
+            raise ConfigError(f"Account '{self.name}' requires ${self.token_env} to be set")
         return token
 
     @classmethod

@@ -11,12 +11,9 @@ Covers production-readiness fixes:
 - cs-proxy check (diagnostics) command
 """
 
-import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # =============================================================================
 # Circuit breaker
@@ -228,6 +225,7 @@ def test_cmd_start_dry_run_does_not_start_tunnels(tmp_path):
 
 def test_check_command_exists():
     from csproxy.proxy import COMMANDS
+
     assert "check" in COMMANDS
     assert callable(COMMANDS["check"])
 
@@ -253,6 +251,7 @@ def test_check_command_runs_without_crash(tmp_path):
 def test_worker_imports_random():
     """Ensure _worker.py imports random for jitter."""
     import csproxy._worker as worker_mod
+
     assert "random" in dir(worker_mod)
 
 
@@ -330,7 +329,9 @@ def test_tunnel_worker_ready_timeout_cleans_spec(tmp_path):
             return None
 
     with pytest.raises(SSHTunnelError, match="did not signal readiness"):
-        tunnel._wait_for_worker_ready(RunningProcess(), tunnel.spec_file.with_suffix(".stderr"), timeout=0.01)
+        tunnel._wait_for_worker_ready(
+            RunningProcess(), tunnel.spec_file.with_suffix(".stderr"), timeout=0.01
+        )
 
     assert not tunnel.spec_file.exists()
 
@@ -363,16 +364,18 @@ def test_wireguard_setup_script_is_wiped_on_remote_run_failure(tmp_path):
         MagicMock(returncode=0, stdout="", stderr=b""),  # wipe setup script
     ]
 
-    with patch("csproxy.wireguard._check_root"), \
-         patch("csproxy.wireguard._ensure_dirs"), \
-         patch("csproxy.wireguard.generate_keys"), \
-         patch("csproxy.wireguard._select_codespace", return_value="codespace-a"), \
-         patch("csproxy.wireguard._ensure_codespace_running"), \
-         patch("csproxy.wireguard._run_gh", return_value=MagicMock(stdout="SSH OK")), \
-         patch("csproxy.wireguard.generate_local_config"), \
-         patch("csproxy.wireguard._build_remote_setup_script", return_value="#!/bin/sh\nsecret"), \
-         patch("csproxy.wireguard._remote_setup_secret_payload", return_value=b"secret\npub\n"), \
-         patch("subprocess.run", side_effect=run_results) as mock_run:
+    with (
+        patch("csproxy.wireguard._check_root"),
+        patch("csproxy.wireguard._ensure_dirs"),
+        patch("csproxy.wireguard.generate_keys"),
+        patch("csproxy.wireguard._select_codespace", return_value="codespace-a"),
+        patch("csproxy.wireguard._ensure_codespace_running"),
+        patch("csproxy.wireguard._run_gh", return_value=MagicMock(stdout="SSH OK")),
+        patch("csproxy.wireguard.generate_local_config"),
+        patch("csproxy.wireguard._build_remote_setup_script", return_value="#!/bin/sh\nsecret"),
+        patch("csproxy.wireguard._remote_setup_secret_payload", return_value=b"secret\npub\n"),
+        patch("subprocess.run", side_effect=run_results) as mock_run,
+    ):
         with pytest.raises(RuntimeError, match="Failed to run WireGuard setup"):
             wireguard.start_tunnel(config, gh)
 

@@ -8,11 +8,9 @@ Extracted from proxy.py for modularity.
 
 import os
 import subprocess
-from typing import Optional
 
 from .runner import CommandRunner
 from .utils import Config, GitHubAuthError, get_logger
-
 
 VERSION = "1.0.0"
 
@@ -40,7 +38,7 @@ export no_proxy="localhost,127.0.0.1,::1"
 
 def print_usage_examples(config: Config) -> None:
     """Print usage examples for the proxy."""
-    proxychains_conf = config.config_dir / 'proxychains.conf'
+    proxychains_conf = config.config_dir / "proxychains.conf"
     print(f"""
 === Usage Examples ===
 
@@ -83,7 +81,6 @@ def _show_status_body(config: Config, gh) -> None:
     from .state import State
     from .tunnel import SSHTunnel
 
-    logger = get_logger()
     try:
         state = State(config.config_dir)
         state.reconcile()
@@ -93,7 +90,7 @@ def _show_status_body(config: Config, gh) -> None:
 
     print("\n=== cs-proxy Status ===\n")
 
-    pid_file = config.config_dir / 'proxy.pid'
+    pid_file = config.config_dir / "proxy.pid"
 
     proxy_running = False
     if pid_file.exists():
@@ -108,13 +105,13 @@ def _show_status_body(config: Config, gh) -> None:
         print("Proxy Status:    STOPPED")
 
     # Show state.json tunnels
-    state_tunnels = state.get_tunnels(kind='ssh')
+    state_tunnels = state.get_tunnels(kind="ssh")
     if state_tunnels:
         print("\nManaged tunnels:")
         for t in state_tunnels:
-            status = t.get('status', 'unknown')
-            port = t.get('port', '?')
-            cs = t.get('codespace_name', '?') or '?'
+            status = t.get("status", "unknown")
+            port = t.get("port", "?")
+            cs = t.get("codespace_name", "?") or "?"
             print(f"  :{port}  {status:<10}  {cs}")
 
     all_names = config.codespace_names or ([config.codespace_name] if config.codespace_name else [])
@@ -122,22 +119,22 @@ def _show_status_body(config: Config, gh) -> None:
 
     if proxy_running:
         if num_tunnels > 1:
-            print(f"\nTunnels:")
+            print("\nTunnels:")
             for i, name in enumerate(all_names):
                 port = config.socks_port + i
-                t = SSHTunnel(config, name, port=port, pid_suffix=('' if i == 0 else str(i + 1)))
+                t = SSHTunnel(config, name, port=port, pid_suffix=("" if i == 0 else str(i + 1)))
                 healthy = t.health_check()
-                exit_ip = t.get_exit_ip() if healthy else 'unreachable'
+                exit_ip = t.get_exit_ip() if healthy else "unreachable"
                 health_str = "HEALTHY" if healthy else "UNHEALTHY"
                 print(f"  :{port}  {health_str:<10}  {exit_ip or 'unknown':<16}  {name}")
         else:
             tunnel = SSHTunnel(config, config.codespace_name)
             if tunnel.health_check():
                 exit_ip = tunnel.get_exit_ip()
-                print(f"\nProxy Health:    HEALTHY")
+                print("\nProxy Health:    HEALTHY")
                 print(f"Proxied IP:      {exit_ip or 'unknown'}")
             else:
-                print(f"\nProxy Health:    UNHEALTHY")
+                print("\nProxy Health:    UNHEALTHY")
 
     print(f"\nSOCKS5 Port:     {config.socks_port}")
     print(f"HTTP Port:       {config.http_proxy_port}")
@@ -152,11 +149,11 @@ def _show_status_body(config: Config, gh) -> None:
     active = config.codespace_name
     managed = set(config.codespace_names)
     if codespaces:
-        print(f"\nCodespaces:")
+        print("\nCodespaces:")
         for cs in codespaces:
-            name = cs.get('name', '')
-            cs_state = cs.get('state', 'unknown')
-            repo = cs.get('repository', '')
+            name = cs.get("name", "")
+            cs_state = cs.get("state", "unknown")
+            repo = cs.get("repository", "")
             if name in managed:
                 idx = config.codespace_names.index(name) if name in config.codespace_names else -1
                 role = f" [tunnel :{config.socks_port + idx}]" if idx >= 0 else " [managed]"
@@ -169,12 +166,12 @@ def _show_status_body(config: Config, gh) -> None:
         print(f"\nCodespace:       {active}")
 
     result = CommandRunner().run(
-        ['curl', '-s', '--connect-timeout', '5', 'https://ifconfig.me'],
+        ["curl", "-s", "--connect-timeout", "5", "https://ifconfig.me"],
         capture_output=True,
         text=True,
-        timeout=10
+        timeout=10,
     )
-    local_ip = result.stdout.strip() if result.returncode == 0 else 'unknown'
+    local_ip = result.stdout.strip() if result.returncode == 0 else "unknown"
     print(f"\nYour Direct IP:  {local_ip}")
     print()
 
@@ -186,7 +183,9 @@ def show_status(config: Config, gh) -> None:
 
 def watch_status(config: Config, gh, interval: int = 2) -> None:
     """Auto-refresh status display every N seconds until Ctrl+C."""
-    import sys, time
+    import sys
+    import time
+
     try:
         while True:
             sys.stdout.write("\033[2J\033[H")
@@ -219,7 +218,7 @@ def print_diagnostics(checks) -> int:
 def show_logs(config: Config, lines: int = 50) -> None:
     """Show recent proxy log entries."""
     logger = get_logger()
-    log_file = config.config_dir / 'proxy.log'
+    log_file = config.config_dir / "proxy.log"
 
     if not log_file.exists():
         logger.warning("No log file found")
@@ -228,7 +227,7 @@ def show_logs(config: Config, lines: int = 50) -> None:
     content = log_file.read_text()
     log_lines = content.splitlines()
     tail = log_lines[-lines:] if len(log_lines) > lines else log_lines
-    print('\n'.join(tail))
+    print("\n".join(tail))
 
 
 def show_help() -> None:

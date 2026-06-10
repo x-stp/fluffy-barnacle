@@ -140,8 +140,9 @@ class CloudflareWorker:
 
         self._deployed_name = None
 
-    def _api_request(self, method: str, endpoint: str,
-                     data: bytes = None, content_type: str = None) -> dict:
+    def _api_request(
+        self, method: str, endpoint: str, data: bytes = None, content_type: str = None
+    ) -> dict:
         """
         Make an authenticated request to the Cloudflare API.
 
@@ -190,8 +191,8 @@ def setup_worker(codespace_url: str, domain: str, config) -> CloudflareWorker:
         CloudflareWorker instance if deployed, None if script was generated only
     """
     logger = get_logger()
-    api_token = config.get('cloudflare_api_token', '')
-    account_id = config.get('cloudflare_account_id', '')
+    api_token = config.get("cloudflare_api_token", "")
+    account_id = config.get("cloudflare_account_id", "")
 
     port = codespace_url.split("-")[-1].split(".")[0]
     worker_name = f"cs-serve-{port}"
@@ -237,8 +238,8 @@ def teardown_worker(port: int, config) -> None:
         port: Port number (used to derive worker name cs-serve-{port})
         config: Config object with Cloudflare credentials
     """
-    api_token = config.get('cloudflare_api_token', '')
-    account_id = config.get('cloudflare_account_id', '')
+    api_token = config.get("cloudflare_api_token", "")
+    account_id = config.get("cloudflare_account_id", "")
 
     if not api_token or not account_id:
         return
