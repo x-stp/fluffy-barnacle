@@ -79,6 +79,19 @@ cs-proxy pac                # generate Proxy Auto-Config (PAC) file
 cs-proxy chain create eu-us --hop WestEurope --hop EastUs
 cs-proxy chain start eu-us  # local SOCKS -> EU Codespace -> US Codespace
 cs-proxy check              # diagnose setup, auth, ports, and state health
+cs-tui                      # interactive terminal dashboard (or: cs-proxy tui)
+```
+
+### Terminal UI (cs-tui)
+
+A live terminal dashboard for monitoring tunnels, codespaces, diagnostics, and
+logs at a glance — built on [Textual](https://textual.textualize.io/). It reads
+the same state the CLI does and auto-refreshes; press `r` to refresh now, `q` to
+quit.
+
+```bash
+pip install 'fluffy-barnacle[tui]'   # one-time: install the optional TUI extra
+cs-tui                               # launch the dashboard
 ```
 
 **Adding a second proxy:**
