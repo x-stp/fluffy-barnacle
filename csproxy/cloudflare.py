@@ -10,6 +10,7 @@ import json
 import urllib.request
 import urllib.error
 from pathlib import Path
+from typing import Optional
 
 from .utils import get_logger
 
@@ -60,7 +61,7 @@ class CloudflareWorker:
         self.api_token = api_token
         self.account_id = account_id
         self.logger = get_logger()
-        self._deployed_name = None
+        self._deployed_name: Optional[str] = None
 
     def deploy(self, worker_name: str, codespace_url: str) -> str:
         """
@@ -116,7 +117,7 @@ class CloudflareWorker:
 
         self.logger.info(f"Custom domain bound: {domain}")
 
-    def teardown(self, worker_name: str = None) -> None:
+    def teardown(self, worker_name: Optional[str] = None) -> None:
         """
         Delete a Worker script from Cloudflare.
 
@@ -140,8 +141,13 @@ class CloudflareWorker:
 
         self._deployed_name = None
 
-    def _api_request(self, method: str, endpoint: str,
-                     data: bytes = None, content_type: str = None) -> dict:
+    def _api_request(
+        self,
+        method: str,
+        endpoint: str,
+        data: Optional[bytes] = None,
+        content_type: Optional[str] = None,
+    ) -> dict:
         """
         Make an authenticated request to the Cloudflare API.
 
@@ -168,7 +174,8 @@ class CloudflareWorker:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 body = resp.read().decode("utf-8")
                 if body:
-                    return json.loads(body)
+                    parsed: dict = json.loads(body)
+                    return parsed
                 return {}
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8", errors="replace")
@@ -176,7 +183,7 @@ class CloudflareWorker:
             raise
 
 
-def setup_worker(codespace_url: str, domain: str, config) -> CloudflareWorker:
+def setup_worker(codespace_url: str, domain: str, config) -> Optional[CloudflareWorker]:
     """
     Deploy a Cloudflare Worker if credentials are available, otherwise
     generate the script and save it locally.
@@ -190,8 +197,8 @@ def setup_worker(codespace_url: str, domain: str, config) -> CloudflareWorker:
         CloudflareWorker instance if deployed, None if script was generated only
     """
     logger = get_logger()
-    api_token = config.get('cloudflare_api_token', '')
-    account_id = config.get('cloudflare_account_id', '')
+    api_token = config.get("cloudflare_api_token", "")
+    account_id = config.get("cloudflare_account_id", "")
 
     port = codespace_url.split("-")[-1].split(".")[0]
     worker_name = f"cs-serve-{port}"
@@ -237,8 +244,8 @@ def teardown_worker(port: int, config) -> None:
         port: Port number (used to derive worker name cs-serve-{port})
         config: Config object with Cloudflare credentials
     """
-    api_token = config.get('cloudflare_api_token', '')
-    account_id = config.get('cloudflare_account_id', '')
+    api_token = config.get("cloudflare_api_token", "")
+    account_id = config.get("cloudflare_account_id", "")
 
     if not api_token or not account_id:
         return

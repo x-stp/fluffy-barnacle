@@ -16,6 +16,7 @@ def check_imports():
     try:
         # Test main package
         import csproxy
+
         print(f"  [+] csproxy version: {csproxy.__version__}")
 
         # Test utilities
@@ -26,14 +27,17 @@ def check_imports():
             get_logger,
             setup_logger,
         )
+
         print("  [+] csproxy.utils")
 
         # Test GitHub module
         from csproxy.github import GitHubManager
+
         print("  [+] csproxy.github")
 
         # Test CLI module
         from csproxy import cli
+
         print("  [+] csproxy.cli")
 
         return True
@@ -83,7 +87,7 @@ def check_config():
         print(f"  [+] Config defaults: SOCKS={config.socks_port}, HTTP={config.http_proxy_port}")
 
         # Test modification
-        config.set('socks_port', 9050)
+        config.set("socks_port", 9050)
         assert config.socks_port == 9050
 
         print("  [+] Config modification works")
@@ -126,14 +130,13 @@ def check_dependencies():
         from csproxy.utils import check_command, check_dependencies
 
         # Test command checking
-        has_python = check_command('python3')
+        has_python = check_command("python3")
         print(f"  [+] check_command('python3') = {has_python}")
 
         # Test dependency checking (don't raise on missing)
         try:
             missing_req, missing_opt = check_dependencies(
-                required=['gh', 'ssh', 'curl'],
-                raise_on_missing=False
+                required=["gh", "ssh", "curl"], raise_on_missing=False
             )
 
             if not missing_req:
@@ -168,8 +171,8 @@ def check_exceptions():
         err1 = CSProxyError("Test error")
         assert err1.exit_code == 1
 
-        err2 = DependencyError(['gh', 'ssh'])
-        assert 'gh' in err2.missing_deps
+        err2 = DependencyError(["gh", "ssh"])
+        assert "gh" in err2.missing_deps
 
         err3 = CodespaceError("Test", codespace_name="test-cs")
         assert err3.codespace_name == "test-cs"
@@ -199,15 +202,43 @@ def check_proxy_module():
             cmd_status,
             show_help,
         )
+
         print("  [+] proxy.py classes imported")
 
         # Test all 24 commands are registered
         expected_commands = {
-            'start', 'stop', 'restart', 'status', 'list', 'create',
-            'set', 'http', 'proxychains', 'env', 'burp', 'keygen',
-            'config', 'logs', 'split', 'ssh', 'run', 'name',
-            'teardown', 'down', 'delete', 'rm', 'token', 'aliases', 'account',
-            'pac', 'completion', 'check', 'doctor', 'pool', 'chain', 'help',
+            "start",
+            "stop",
+            "restart",
+            "status",
+            "list",
+            "create",
+            "set",
+            "http",
+            "proxychains",
+            "env",
+            "burp",
+            "keygen",
+            "config",
+            "logs",
+            "split",
+            "ssh",
+            "run",
+            "name",
+            "teardown",
+            "down",
+            "delete",
+            "rm",
+            "token",
+            "aliases",
+            "account",
+            "pac",
+            "completion",
+            "check",
+            "doctor",
+            "pool",
+            "chain",
+            "help",
         }
         registered = set(COMMANDS.keys())
         missing = expected_commands - registered
@@ -218,23 +249,26 @@ def check_proxy_module():
 
         # Test SSHTunnel initialization (no OS calls)
         from csproxy.utils import Config
+
         config = Config()
-        tunnel = SSHTunnel(config, 'test-codespace')
-        assert tunnel.codespace_name == 'test-codespace'
-        assert tunnel.pid_file == config.config_dir / 'proxy.pid'
+        tunnel = SSHTunnel(config, "test-codespace")
+        assert tunnel.codespace_name == "test-codespace"
+        assert tunnel.pid_file == config.config_dir / "proxy.pid"
         print("  [+] SSHTunnel initialization OK")
 
         # Test CodespaceSelector initialization
         from csproxy.github import GitHubManager
+
         gh = GitHubManager()
         selector = CodespaceSelector(gh, config)
-        assert selector.BLANK_REPO == 'github/codespaces-blank'
+        assert selector.BLANK_REPO == "github/codespaces-blank"
         print("  [+] CodespaceSelector initialization OK")
 
         # Test CLI argument parsing (using in-process argv)
         from csproxy.cli import main_proxy
+
         # Help should return 0
-        result = main_proxy(['help'])
+        result = main_proxy(["help"])
         assert result == 0, f"Expected 0, got {result}"
         print("  [+] CLI dispatch to help works")
 
@@ -243,6 +277,7 @@ def check_proxy_module():
     except Exception as e:
         print(f"  [-] Proxy module test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -267,10 +302,11 @@ def check_serve_module():
             list_files,
             show_help,
         )
+
         print("  [+] serve.py imported")
 
         # Verify all commands are registered
-        expected = {'file', 'dir', 'redirect', 'custom', 'stop', 'clean', 'cleanup', 'list'}
+        expected = {"file", "dir", "redirect", "custom", "stop", "clean", "cleanup", "list"}
         registered = set(SERVE_COMMANDS.keys())
         missing = expected - registered
         if missing:
@@ -283,22 +319,25 @@ def check_serve_module():
         print(f"  [+] DEFAULT_PORT = {DEFAULT_PORT}")
 
         # Verify server scripts are valid Python by compiling them
-        import py_compile, tempfile, os
+        import py_compile
+        import tempfile
+        import os
+
         for name, script_template in [
-            ('file_server', _FILE_SERVER_SCRIPT),
-            ('redirect_server', _REDIRECT_SERVER_SCRIPT),
-            ('custom_server', _CUSTOM_SERVER_SCRIPT),
+            ("file_server", _FILE_SERVER_SCRIPT),
+            ("redirect_server", _REDIRECT_SERVER_SCRIPT),
+            ("custom_server", _CUSTOM_SERVER_SCRIPT),
         ]:
             # Fill in required placeholders with test values
             script = script_template.format(
                 PORT=9999,
-                TARGET_URL='https://example.com',
+                TARGET_URL="https://example.com",
                 REDIRECT_CODE=302,
-                RESPONSE_BODY='OK',
-                CONTENT_TYPE='text/plain',
+                RESPONSE_BODY="OK",
+                CONTENT_TYPE="text/plain",
                 STATUS_CODE=200,
             )
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
                 f.write(script)
                 fname = f.name
             try:
@@ -312,7 +351,8 @@ def check_serve_module():
 
         # Test CLI argparse for cs-serve
         from csproxy.cli import main_serve
-        result = main_serve(['--help'])
+
+        main_serve(["--help"])
         # argparse --help returns SystemExit(0)
         print("  [+] cs-serve --help dispatches correctly")
 
@@ -328,6 +368,7 @@ def check_serve_module():
     except Exception as e:
         print(f"  [-] Serve module test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -348,10 +389,11 @@ def check_wireguard_module():
             _REMOTE_SETUP_SCRIPT,
             show_help,
         )
+
         print("  [+] wireguard.py imported")
 
         # Verify all commands are registered
-        expected = {'up', 'down', 'status', 'route', 'monitor'}
+        expected = {"up", "down", "status", "route", "monitor"}
         registered = set(COMMANDS.keys())
         missing = expected - registered
         if missing:
@@ -362,30 +404,30 @@ def check_wireguard_module():
         # Verify defaults
         assert WG_PORT == 51820, f"Expected 51820, got {WG_PORT}"
         assert TCP_RELAY_PORT == 51821
-        assert WG_INTERFACE == 'cswg0'
-        assert WG_LOCAL_IP == '10.99.99.2/24'
-        assert WG_REMOTE_IP == '10.99.99.1/24'
-        assert WG_NETWORK == '10.99.99.0/24'
+        assert WG_INTERFACE == "cswg0"
+        assert WG_LOCAL_IP == "10.99.99.2/24"
+        assert WG_REMOTE_IP == "10.99.99.1/24"
+        assert WG_NETWORK == "10.99.99.0/24"
         print(f"  [+] WG defaults: interface={WG_INTERFACE}, port={WG_PORT}")
 
         # Verify remote setup script is valid Bash and reads key material at runtime.
-        assert '#!/usr/bin/env bash' in _REMOTE_SETUP_SCRIPT
-        assert 'wg-quick up wg0' in _REMOTE_SETUP_SCRIPT
-        assert 'read -r REMOTE_PRIVATE_KEY' in _REMOTE_SETUP_SCRIPT
-        assert 'read -r LOCAL_PUBLIC_KEY' in _REMOTE_SETUP_SCRIPT
+        assert "#!/usr/bin/env bash" in _REMOTE_SETUP_SCRIPT
+        assert "wg-quick up wg0" in _REMOTE_SETUP_SCRIPT
+        assert "read -r REMOTE_PRIVATE_KEY" in _REMOTE_SETUP_SCRIPT
+        assert "read -r LOCAL_PUBLIC_KEY" in _REMOTE_SETUP_SCRIPT
         print("  [+] Remote setup script template is valid")
 
         # Verify script renders without error when format() is called with test values
         rendered = _REMOTE_SETUP_SCRIPT.format(
-            wg_remote_ip='10.99.99.1/24',
+            wg_remote_ip="10.99.99.1/24",
             wg_port=51820,
-            wg_network='10.99.99.0/24',
-            local_ip_host='10.99.99.2',
-            remote_ip_host='10.99.99.1',
+            wg_network="10.99.99.0/24",
+            local_ip_host="10.99.99.2",
+            remote_ip_host="10.99.99.1",
         )
-        assert 'TEST_PRIV_KEY=' not in rendered
-        assert 'TEST_PUB_KEY=' not in rendered
-        assert '#!/usr/bin/env bash' in rendered
+        assert "TEST_PRIV_KEY=" not in rendered
+        assert "TEST_PUB_KEY=" not in rendered
+        assert "#!/usr/bin/env bash" in rendered
         print("  [+] Remote setup script renders correctly")
 
         return True
@@ -393,6 +435,7 @@ def check_wireguard_module():
     except Exception as e:
         print(f"  [-] Wireguard module test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -421,11 +464,11 @@ def check_tools_module():
             main_tools,
             show_help,
         )
+
         print("  [+] tools.py imported")
 
         # Verify all wrapped tools are present
-        expected_tools = {'pcurl', 'pwget', 'pnmap', 'pnuclei', 'pffuf',
-                          'phttpx', 'psqlmap', 'pcs'}
+        expected_tools = {"pcurl", "pwget", "pnmap", "pnuclei", "pffuf", "phttpx", "psqlmap", "pcs"}
         registered = set(TOOL_COMMANDS.keys())
         missing = expected_tools - registered
         if missing:
@@ -434,13 +477,12 @@ def check_tools_module():
         print(f"  [+] All {len(registered)} tool wrappers registered")
 
         # Verify wordlist paths are Path objects
-        from pathlib import Path
         assert isinstance(SECLISTS, Path)
         assert isinstance(WORDLIST_COMMON, Path)
         print(f"  [+] SECLISTS path: {SECLISTS}")
 
         # Test help dispatch
-        result = main_tools(['help'])
+        result = main_tools(["help"])
         assert result == 0
         print("  [+] cs-tools help dispatches correctly")
 
@@ -449,6 +491,7 @@ def check_tools_module():
     except Exception as e:
         print(f"  [-] Tools module test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -507,5 +550,5 @@ def test_installation_smoke():
     assert main() == 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

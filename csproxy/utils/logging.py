@@ -14,6 +14,7 @@ from typing import Optional
 
 try:
     from colorama import Fore, Style, init
+
     init(autoreset=True)
     COLORAMA_AVAILABLE = True
 except ImportError:
@@ -37,18 +38,18 @@ class ColoredFormatter(logging.Formatter):
 
     # Level name display format
     LEVEL_NAMES = {
-        logging.DEBUG: 'DEBUG',
-        logging.INFO: 'INFO',
-        logging.WARNING: 'WARN',
-        logging.ERROR: 'ERROR',
-        logging.CRITICAL: 'CRITICAL',
+        logging.DEBUG: "DEBUG",
+        logging.INFO: "INFO",
+        logging.WARNING: "WARN",
+        logging.ERROR: "ERROR",
+        logging.CRITICAL: "CRITICAL",
     }
 
     def format(self, record: logging.LogRecord) -> str:
         """Format log record with colors."""
         # Get color for this level
-        color = self.COLORS.get(record.levelno, '')
-        reset = Style.RESET_ALL if COLORAMA_AVAILABLE else ''
+        color = self.COLORS.get(record.levelno, "")
+        reset = Style.RESET_ALL if COLORAMA_AVAILABLE else ""
 
         # Get custom level name
         level_name = self.LEVEL_NAMES.get(record.levelno, record.levelname)
@@ -68,16 +69,14 @@ class FileFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format log record for file output with timestamp."""
         # Add timestamp for file logs
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         record.timestamp = timestamp
         record.levelname = f"[{record.levelname}]"
         return super().format(record)
 
 
 def setup_logger(
-    name: str = 'csproxy',
-    verbose: bool = False,
-    log_file: Optional[Path] = None
+    name: str = "csproxy", verbose: bool = False, log_file: Optional[Path] = None
 ) -> logging.Logger:
     """
     Set up and configure logger with colored console output and optional file logging.
@@ -108,7 +107,7 @@ def setup_logger(
     # Console handler with colors
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.DEBUG if verbose else logging.INFO)
-    console_formatter = ColoredFormatter('%(levelname)s %(message)s')
+    console_formatter = ColoredFormatter("%(levelname)s %(message)s")
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
@@ -118,9 +117,9 @@ def setup_logger(
             # Ensure log directory exists
             log_file.parent.mkdir(parents=True, exist_ok=True)
 
-            file_handler = logging.FileHandler(log_file, mode='a')
+            file_handler = logging.FileHandler(log_file, mode="a")
             file_handler.setLevel(logging.DEBUG)  # Always log everything to file
-            file_formatter = FileFormatter('[%(timestamp)s] %(levelname)s %(message)s')
+            file_formatter = FileFormatter("[%(timestamp)s] %(levelname)s %(message)s")
             file_handler.setFormatter(file_formatter)
             logger.addHandler(file_handler)
         except (OSError, PermissionError) as e:
@@ -130,7 +129,7 @@ def setup_logger(
     return logger
 
 
-def get_logger(name: str = 'csproxy') -> logging.Logger:
+def get_logger(name: str = "csproxy") -> logging.Logger:
     """
     Get existing logger instance.
 

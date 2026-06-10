@@ -11,13 +11,9 @@ These tests verify the UX improvements added in Phase 2:
 - New CLI commands (pac, completion)
 """
 
-import json
-import os
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
-
 
 # =============================================================================
 # Config dataclass + validation + profiles
@@ -26,42 +22,49 @@ import pytest
 
 def test_config_data_validation_rejects_low_port():
     from csproxy.utils.config import _ConfigData
+
     with pytest.raises(ValueError, match="socks_port must be 1024-65535"):
         _ConfigData(socks_port=80)
 
 
 def test_config_data_validation_rejects_high_port():
     from csproxy.utils.config import _ConfigData
+
     with pytest.raises(ValueError, match="socks_port must be 1024-65535"):
         _ConfigData(socks_port=70000)
 
 
 def test_config_data_validation_rejects_too_many_proxies():
     from csproxy.utils.config import _ConfigData
+
     with pytest.raises(ValueError, match="num_proxies must be 1-5"):
         _ConfigData(num_proxies=10)
 
 
 def test_config_data_validation_rejects_zero_proxies():
     from csproxy.utils.config import _ConfigData
+
     with pytest.raises(ValueError, match="num_proxies must be 1-5"):
         _ConfigData(num_proxies=0)
 
 
 def test_config_data_validation_rejects_bad_delay():
     from csproxy.utils.config import _ConfigData
+
     with pytest.raises(ValueError, match="reconnect_delay must be >= 1"):
         _ConfigData(reconnect_delay=0)
 
 
 def test_config_data_validation_rejects_inconsistent_max_delay():
     from csproxy.utils.config import _ConfigData
+
     with pytest.raises(ValueError, match="max_reconnect_delay must be >= reconnect_delay"):
         _ConfigData(reconnect_delay=10, max_reconnect_delay=5)
 
 
 def test_config_data_profile_merge():
     from csproxy.utils.config import _ConfigData
+
     raw = {
         "profile": "redteam",
         "profiles": {
@@ -79,6 +82,7 @@ def test_config_data_profile_merge():
 
 def test_config_data_profile_ignored_when_not_found():
     from csproxy.utils.config import _ConfigData
+
     raw = {"profile": "nonexistent", "socks_port": 1080}
     cfg = _ConfigData.from_dict(raw)
     assert cfg.socks_port == 1080
@@ -86,6 +90,7 @@ def test_config_data_profile_ignored_when_not_found():
 
 def test_config_data_set_field_revalidates():
     from csproxy.utils.config import _ConfigData
+
     cfg = _ConfigData(socks_port=1080)
     cfg.set_field("socks_port", 9090)
     assert cfg.socks_port == 9090
@@ -95,6 +100,7 @@ def test_config_data_set_field_revalidates():
 
 def test_config_data_set_field_rejects_unknown_key():
     from csproxy.utils.config import _ConfigData
+
     cfg = _ConfigData()
     with pytest.raises(KeyError, match="Unknown config key"):
         cfg.set_field("nonexistent", 1)
@@ -102,6 +108,7 @@ def test_config_data_set_field_rejects_unknown_key():
 
 def test_config_env_override_socks_port(monkeypatch, tmp_path):
     from csproxy.utils.config import Config
+
     monkeypatch.setenv("SOCKS_PORT", "9999")
     config = Config(config_dir=tmp_path)
     assert config.socks_port == 9999
@@ -120,6 +127,7 @@ def test_config_dir_env_override(monkeypatch, tmp_path):
 
 def test_config_env_override_locations(monkeypatch, tmp_path):
     from csproxy.utils.config import Config
+
     monkeypatch.setenv("LOCATIONS", "WestEurope,EastUs")
     config = Config(config_dir=tmp_path)
     assert config.locations == ["WestEurope", "EastUs"]
@@ -127,6 +135,7 @@ def test_config_env_override_locations(monkeypatch, tmp_path):
 
 def test_config_env_override_bool(monkeypatch, tmp_path):
     from csproxy.utils.config import Config
+
     monkeypatch.setenv("DNS_PROXY", "true")
     config = Config(config_dir=tmp_path)
     assert config.dns_proxy is True
@@ -134,6 +143,7 @@ def test_config_env_override_bool(monkeypatch, tmp_path):
 
 def test_config_save_and_load_preserve_unknown_keys(tmp_path):
     from csproxy.utils.config import Config
+
     config = Config(config_dir=tmp_path)
     config._extra["custom_key"] = "custom_value"
     config.save()
@@ -144,6 +154,7 @@ def test_config_save_and_load_preserve_unknown_keys(tmp_path):
 
 def test_config_save_and_load_preserve_profiles(tmp_path):
     from csproxy.utils.config import Config
+
     config = Config(config_dir=tmp_path)
     config.set("profile", "test")
     config.set("profiles", {"test": {"socks_port": 7777}})
@@ -161,6 +172,7 @@ def test_config_save_and_load_preserve_profiles(tmp_path):
 def test_get_proxy_port_fallback_when_no_state(monkeypatch, tmp_path):
     from csproxy.utils.config import Config
     from csproxy.tools import _get_proxy_port
+
     config = Config(config_dir=tmp_path)
     assert _get_proxy_port(config) == 1080
 
@@ -216,6 +228,7 @@ def test_get_proxy_port_fallback_when_no_healthy_tunnels(monkeypatch, tmp_path):
 
 def test_bash_completion_contains_all_commands():
     from csproxy.completion import generate_completion
+
     script = generate_completion("bash")
     for cmd in ("start", "stop", "status", "pac", "completion", "help"):
         assert cmd in script, f"Missing command in bash completion: {cmd}"
@@ -224,6 +237,7 @@ def test_bash_completion_contains_all_commands():
 
 def test_zsh_completion_contains_all_commands():
     from csproxy.completion import generate_completion
+
     script = generate_completion("zsh")
     for cmd in ("start", "stop", "status", "pac", "completion", "help"):
         assert cmd in script, f"Missing command in zsh completion: {cmd}"
@@ -232,12 +246,14 @@ def test_zsh_completion_contains_all_commands():
 
 def test_completion_rejects_unsupported_shell():
     from csproxy.completion import generate_completion
+
     script = generate_completion("fish")
     assert "Unsupported shell" in script
 
 
 def test_completion_is_case_insensitive():
     from csproxy.completion import generate_completion
+
     assert "complete -F" in generate_completion("BASH")
     assert "#compdef" in generate_completion("Zsh")
 
@@ -319,13 +335,15 @@ def test_cmd_completion_unsupported_shell():
 
 def test_state_init_creates_dir(tmp_path):
     from csproxy.state import State
+
     subdir = tmp_path / "state_test"
-    state = State(subdir)
+    State(subdir)
     assert subdir.exists()
 
 
 def test_state_add_and_get_tunnel(tmp_path):
     from csproxy.state import State
+
     state = State(tmp_path)
     state.add_tunnel(
         id="ssh-1080",
@@ -345,6 +363,7 @@ def test_state_add_and_get_tunnel(tmp_path):
 
 def test_state_remove_tunnel(tmp_path):
     from csproxy.state import State
+
     state = State(tmp_path)
     state.add_tunnel(
         id="ssh-1080",
@@ -363,6 +382,7 @@ def test_state_remove_tunnel(tmp_path):
 
 def test_state_update_tunnel(tmp_path):
     from csproxy.state import State
+
     state = State(tmp_path)
     state.add_tunnel(
         id="ssh-1080",
@@ -411,6 +431,7 @@ def test_state_add_tunnel_concurrent_writes_do_not_clobber(tmp_path):
 
 def test_state_reconcile_marks_dead_pid_as_crashed(tmp_path):
     from csproxy.state import State
+
     state = State(tmp_path)
     state.add_tunnel(
         id="ssh-1080",
@@ -430,6 +451,7 @@ def test_state_reconcile_marks_dead_pid_as_crashed(tmp_path):
 
 def test_state_record_failure_tracks_failures(tmp_path):
     from csproxy.state import State
+
     state = State(tmp_path)
     state.add_tunnel(
         id="ssh-1080",
@@ -451,6 +473,7 @@ def test_state_record_failure_tracks_failures(tmp_path):
 
 def test_state_record_failure_trips_circuit_breaker(tmp_path):
     from csproxy.state import State
+
     state = State(tmp_path)
     state.add_tunnel(
         id="ssh-1080",
@@ -476,12 +499,14 @@ def test_state_record_failure_trips_circuit_breaker(tmp_path):
 
 def test_pac_command_in_dispatch_table():
     from csproxy.proxy import COMMANDS
+
     assert "pac" in COMMANDS
     assert callable(COMMANDS["pac"])
 
 
 def test_completion_command_in_dispatch_table():
     from csproxy.proxy import COMMANDS
+
     assert "completion" in COMMANDS
     assert callable(COMMANDS["completion"])
 
@@ -490,7 +515,6 @@ def test_status_watch_flag_dispatches_to_watch_status():
     from csproxy.proxy import cmd_status
     from csproxy.utils.config import Config
     from csproxy.github import GitHubManager
-    from unittest.mock import MagicMock
 
     config = Config()
     gh = GitHubManager()
@@ -515,10 +539,10 @@ def test_check_proxy_caches_result():
     mock_result = MagicMock()
     mock_result.returncode = 0
 
-    with patch('subprocess.run', return_value=mock_result) as mock_run:
-        result1 = check_proxy('127.0.0.1', 1080, _bypass_cache=True)
-        result2 = check_proxy('127.0.0.1', 1080)
-        result3 = check_proxy('127.0.0.1', 1080)
+    with patch("subprocess.run", return_value=mock_result) as mock_run:
+        result1 = check_proxy("127.0.0.1", 1080, _bypass_cache=True)
+        result2 = check_proxy("127.0.0.1", 1080)
+        result3 = check_proxy("127.0.0.1", 1080)
 
     assert result1 is True
     assert result2 is True
@@ -536,9 +560,9 @@ def test_check_proxy_bypass_cache():
     mock_result = MagicMock()
     mock_result.returncode = 0
 
-    with patch('subprocess.run', return_value=mock_result) as mock_run:
-        check_proxy('127.0.0.1', 1080)
-        check_proxy('127.0.0.1', 1080, _bypass_cache=True)
+    with patch("subprocess.run", return_value=mock_result) as mock_run:
+        check_proxy("127.0.0.1", 1080)
+        check_proxy("127.0.0.1", 1080, _bypass_cache=True)
 
     assert mock_run.call_count == 2
 
@@ -547,76 +571,78 @@ def test_proxy_env_sets_variables():
     """_proxy_env returns dict with SOCKS5 proxy variables."""
     from csproxy.tools import _proxy_env
 
-    env = _proxy_env('127.0.0.1', 1080)
-    assert env['ALL_PROXY'] == 'socks5h://127.0.0.1:1080'
-    assert env['HTTP_PROXY'] == 'socks5h://127.0.0.1:1080'
-    assert env['HTTPS_PROXY'] == 'socks5h://127.0.0.1:1080'
-    assert env['SOCKS_PROXY'] == 'socks5h://127.0.0.1:1080'
+    env = _proxy_env("127.0.0.1", 1080)
+    assert env["ALL_PROXY"] == "socks5h://127.0.0.1:1080"
+    assert env["HTTP_PROXY"] == "socks5h://127.0.0.1:1080"
+    assert env["HTTPS_PROXY"] == "socks5h://127.0.0.1:1080"
+    assert env["SOCKS_PROXY"] == "socks5h://127.0.0.1:1080"
 
 
 def test_sanitize_nmap_args_removes_invalid_scans():
     """_sanitize_nmap_args strips scan types that don't work through SOCKS."""
     from csproxy.tools import _sanitize_nmap_args
 
-    args = ['-sS', '-p', '80', '-sU', '-O', '--traceroute', '--scanflags', 'URG', 'target.com']
-    with patch('os.geteuid', return_value=1000):
+    args = ["-sS", "-p", "80", "-sU", "-O", "--traceroute", "--scanflags", "URG", "target.com"]
+    with patch("os.geteuid", return_value=1000):
         result = _sanitize_nmap_args(args)
 
-    assert '-sS' not in result
-    assert '-sU' not in result
-    assert '-O' not in result
-    assert '--traceroute' not in result
-    assert '--scanflags' not in result
-    assert 'URG' not in result
-    assert '-sT' in result
-    assert '-Pn' in result
-    assert 'target.com' in result
-    assert '-p' in result
-    assert '80' in result
+    assert "-sS" not in result
+    assert "-sU" not in result
+    assert "-O" not in result
+    assert "--traceroute" not in result
+    assert "--scanflags" not in result
+    assert "URG" not in result
+    assert "-sT" in result
+    assert "-Pn" in result
+    assert "target.com" in result
+    assert "-p" in result
+    assert "80" in result
 
 
 def test_sanitize_nmap_args_adds_required_flags():
     """_sanitize_nmap_args prepends -sT and -Pn when missing."""
     from csproxy.tools import _sanitize_nmap_args
 
-    with patch('os.geteuid', return_value=1000):
-        result = _sanitize_nmap_args(['target.com'])
+    with patch("os.geteuid", return_value=1000):
+        result = _sanitize_nmap_args(["target.com"])
 
-    assert result[0] == '-Pn'
-    assert result[1] == '-sT'
+    assert result[0] == "-Pn"
+    assert result[1] == "-sT"
 
 
 def test_sanitize_nmap_args_adds_max_parallelism():
     """_sanitize_nmap_args adds --max-parallelism 10 when not present."""
     from csproxy.tools import _sanitize_nmap_args
 
-    with patch('os.geteuid', return_value=1000):
-        result = _sanitize_nmap_args(['target.com'])
+    with patch("os.geteuid", return_value=1000):
+        result = _sanitize_nmap_args(["target.com"])
 
-    assert '--max-parallelism' in result
-    assert result[result.index('--max-parallelism') + 1] == '10'
+    assert "--max-parallelism" in result
+    assert result[result.index("--max-parallelism") + 1] == "10"
 
 
 def test_sanitize_nmap_args_respects_existing_max_parallelism():
     """_sanitize_nmap_args does not override existing --max-parallelism."""
     from csproxy.tools import _sanitize_nmap_args
 
-    with patch('os.geteuid', return_value=1000):
-        result = _sanitize_nmap_args(['--max-parallelism', '5', 'target.com'])
+    with patch("os.geteuid", return_value=1000):
+        result = _sanitize_nmap_args(["--max-parallelism", "5", "target.com"])
 
-    idx = result.index('--max-parallelism')
-    assert result[idx + 1] == '5'
+    idx = result.index("--max-parallelism")
+    assert result[idx + 1] == "5"
 
 
 def test_main_tools_help():
     """main_tools(['help']) returns 0."""
     from csproxy.tools import main_tools
-    assert main_tools(['help']) == 0
+
+    assert main_tools(["help"]) == 0
 
 
 def test_main_tools_no_args():
     """main_tools([]) returns 0 (shows help)."""
     from csproxy.tools import main_tools
+
     assert main_tools([]) == 0
 
 
@@ -624,52 +650,53 @@ def test_main_tools_dry_run():
     """--dry-run prints command without executing."""
     from csproxy.tools import main_tools
 
-    with patch('builtins.print') as mock_print:
-        result = main_tools(['--dry-run', 'pcurl', 'https://example.com'])
+    with patch("builtins.print") as mock_print:
+        result = main_tools(["--dry-run", "pcurl", "https://example.com"])
     assert result == 0
-    printed = ' '.join(str(c[0][0]) for c in mock_print.call_args_list)
-    assert '[dry-run]' in printed
+    printed = " ".join(str(c[0][0]) for c in mock_print.call_args_list)
+    assert "[dry-run]" in printed
 
 
 def test_main_tools_unknown_tool():
     """main_tools returns 1 for unknown tool."""
     from csproxy.tools import main_tools
-    assert main_tools(['notatool']) == 1
+
+    assert main_tools(["notatool"]) == 1
 
 
 def test_sanitize_ffuf_args_caps_threads():
     """_sanitize_ffuf_args caps -t to 20 when user requests more."""
     from csproxy.tools import _sanitize_ffuf_args
 
-    result = _sanitize_ffuf_args(['-u', 'http://target.com', '-t', '50'])
-    idx = result.index('-t')
-    assert result[idx + 1] == '20'
+    result = _sanitize_ffuf_args(["-u", "http://target.com", "-t", "50"])
+    idx = result.index("-t")
+    assert result[idx + 1] == "20"
 
 
 def test_sanitize_ffuf_args_caps_joined_threads():
     """_sanitize_ffuf_args handles -t50 style arguments."""
     from csproxy.tools import _sanitize_ffuf_args
 
-    result = _sanitize_ffuf_args(['-u', 'http://target.com', '-t50'])
-    assert '-t20' in result
+    result = _sanitize_ffuf_args(["-u", "http://target.com", "-t50"])
+    assert "-t20" in result
 
 
 def test_sanitize_ffuf_args_adds_default_threads():
     """_sanitize_ffuf_args adds -t 20 when not explicitly set."""
     from csproxy.tools import _sanitize_ffuf_args
 
-    result = _sanitize_ffuf_args(['-u', 'http://target.com'])
-    idx = result.index('-t')
-    assert result[idx + 1] == '20'
+    result = _sanitize_ffuf_args(["-u", "http://target.com"])
+    idx = result.index("-t")
+    assert result[idx + 1] == "20"
 
 
 def test_sanitize_ffuf_args_respects_low_threads():
     """_sanitize_ffuf_args does not override threads <= 20."""
     from csproxy.tools import _sanitize_ffuf_args
 
-    result = _sanitize_ffuf_args(['-u', 'http://target.com', '-t', '10'])
-    idx = result.index('-t')
-    assert result[idx + 1] == '10'
+    result = _sanitize_ffuf_args(["-u", "http://target.com", "-t", "10"])
+    idx = result.index("-t")
+    assert result[idx + 1] == "10"
 
 
 def test_main_tools_timeout_passed_to_wrapper():
@@ -677,21 +704,21 @@ def test_main_tools_timeout_passed_to_wrapper():
     from csproxy.tools import main_tools
 
     mock_pcurl = MagicMock(return_value=0)
-    with patch.dict('csproxy.tools.TOOL_COMMANDS', {'pcurl': ('pcurl', mock_pcurl)}):
-        with patch('csproxy.tools.check_proxy', return_value=True):
-            main_tools(['--timeout', '99', 'pcurl', 'https://example.com'])
+    with patch.dict("csproxy.tools.TOOL_COMMANDS", {"pcurl": ("pcurl", mock_pcurl)}):
+        with patch("csproxy.tools.check_proxy", return_value=True):
+            main_tools(["--timeout", "99", "pcurl", "https://example.com"])
 
     mock_pcurl.assert_called_once()
     kwargs = mock_pcurl.call_args[1]
-    assert kwargs['timeout'] == 99
+    assert kwargs["timeout"] == 99
 
 
 def test_pcs_command_not_found():
     """pcs returns 127 when the wrapped command does not exist."""
     from csproxy.tools import pcs
 
-    with patch('shutil.which', return_value=None):
-        with patch('csproxy.tools.check_proxy', return_value=True):
-            result = pcs(['nonexistent', 'arg'])
+    with patch("shutil.which", return_value=None):
+        with patch("csproxy.tools.check_proxy", return_value=True):
+            result = pcs(["nonexistent", "arg"])
 
     assert result == 127

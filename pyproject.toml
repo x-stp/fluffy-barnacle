@@ -39,9 +39,15 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
-    "black>=23.0",
-    "flake8>=6.0",
-    "mypy>=1.0",
+    # black, flake8, and mypy gate CI, so pin to compatible-release ranges:
+    # newer versions add formatting/lint/type rules that would break the build
+    # only in CI (where the latest is installed) and not locally.
+    "black~=26.5.1",
+    "flake8~=7.3.0",
+    "mypy~=2.1.0",
+]
+tui = [
+    "textual>=0.60",
 ]
 docs = [
     "mkdocs>=1.5",
@@ -59,6 +65,7 @@ cs-proxy = "csproxy.cli:main_proxy"
 cs-serve = "csproxy.cli:main_serve"
 cs-wg = "csproxy.cli:main_wg"
 cs-tools = "csproxy.tools:main_tools"
+cs-tui = "csproxy.tui:main_tui"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -73,6 +80,13 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
+
+# Third-party packages without type information. textual is only present with
+# the optional [tui] extra (not installed in the lint job); yaml and colorama
+# ship no stubs in this environment.
+[[tool.mypy.overrides]]
+module = ["textual.*", "yaml", "colorama"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

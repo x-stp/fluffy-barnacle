@@ -1,0 +1,15 @@
+# Run `pre-commit install` once to enable these hooks locally.
+# Mirrors the CI lint job (black, flake8) so issues are caught before push.
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        args: ["--line-length=100"]
+        files: ^(csproxy|tests)/
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        files: ^(csproxy|tests)/

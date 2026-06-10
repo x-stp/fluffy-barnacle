@@ -51,9 +51,10 @@ def _get_proxy_port(config: Config) -> int:
         state = State(config.config_dir)
         healthy = state.get_tunnels(kind="ssh", status="healthy")
         if healthy:
-            return random.choice(healthy)["port"]
-    except Exception:
-        pass
+            port: int = random.choice(healthy)["port"]
+            return port
+    except (TimeoutError, OSError, KeyError) as e:
+        get_logger().debug(f"Falling back to configured socks_port: {e}")
     return config.socks_port
 
 
@@ -61,12 +62,12 @@ def _get_proxy_port(config: Config) -> int:
 # Wordlist paths
 # =============================================================================
 
-SECLISTS = Path(os.environ.get('SECLISTS', Path.home() / 'wordlists' / 'SecLists'))
-WORDLIST_COMMON = SECLISTS / 'Discovery/Web-Content/common.txt'
-WORDLIST_BIG = SECLISTS / 'Discovery/Web-Content/big.txt'
-WORDLIST_DIRS = SECLISTS / 'Discovery/Web-Content/directory-list-2.3-medium.txt'
-WORDLIST_PARAMS = SECLISTS / 'Discovery/Web-Content/burp-parameter-names.txt'
-WORDLIST_SUBDOMAINS = SECLISTS / 'Discovery/DNS/subdomains-top1million-5000.txt'
+SECLISTS = Path(os.environ.get("SECLISTS", Path.home() / "wordlists" / "SecLists"))
+WORDLIST_COMMON = SECLISTS / "Discovery/Web-Content/common.txt"
+WORDLIST_BIG = SECLISTS / "Discovery/Web-Content/big.txt"
+WORDLIST_DIRS = SECLISTS / "Discovery/Web-Content/directory-list-2.3-medium.txt"
+WORDLIST_PARAMS = SECLISTS / "Discovery/Web-Content/burp-parameter-names.txt"
+WORDLIST_SUBDOMAINS = SECLISTS / "Discovery/DNS/subdomains-top1million-5000.txt"
 
 
 # =============================================================================
@@ -75,7 +76,7 @@ WORDLIST_SUBDOMAINS = SECLISTS / 'Discovery/DNS/subdomains-top1million-5000.txt'
 
 
 def check_proxy(
-    host: str = '127.0.0.1',
+    host: str = "127.0.0.1",
     port: Optional[int] = None,
     *,
     _bypass_cache: bool = False,
@@ -96,16 +97,19 @@ def check_proxy(
         ts, healthy = _CHECK_CACHE.get(key, (0, False))
         if time.monotonic() - ts < 5:
             if not healthy:
-                print(
-                    f"[!] Warning: cs-proxy doesn't appear to be running on port {port}"
-                )
+                print(f"[!] Warning: cs-proxy doesn't appear to be running on port {port}")
                 print("    Start with: cs-proxy start")
             return healthy
 
     result = _run(
         [
-            'curl', '-s', '--connect-timeout', '2',
-            '--socks5-hostname', f'{host}:{port}', 'https://ifconfig.me',
+            "curl",
+            "-s",
+            "--connect-timeout",
+            "2",
+            "--socks5-hostname",
+            f"{host}:{port}",
+            "https://ifconfig.me",
         ],
         capture_output=True,
         timeout=10,
@@ -132,11 +136,11 @@ def _proxy_env(host: str, port: int) -> dict:
     tools with native proxy support pick up the tunnel automatically.
     """
     env = os.environ.copy()
-    proxy_url = f'socks5h://{host}:{port}'
-    env['ALL_PROXY'] = proxy_url
-    env['HTTP_PROXY'] = proxy_url
-    env['HTTPS_PROXY'] = proxy_url
-    env['SOCKS_PROXY'] = proxy_url
+    proxy_url = f"socks5h://{host}:{port}"
+    env["ALL_PROXY"] = proxy_url
+    env["HTTP_PROXY"] = proxy_url
+    env["HTTPS_PROXY"] = proxy_url
+    env["SOCKS_PROXY"] = proxy_url
     return env
 
 
@@ -145,17 +149,32 @@ def _proxy_env(host: str, port: int) -> dict:
 # =============================================================================
 
 # Scan types that don't work through SOCKS5 / proxychains
-_NMAP_INVALID_SCANS = frozenset([
-    '-sS', '-sF', '-sN', '-sX', '-sU', '-sA', '-sW', '-sM', '-sI', '-sO', '-sZ', '-sY',
-])
+_NMAP_INVALID_SCANS = frozenset(
+    [
+        "-sS",
+        "-sF",
+        "-sN",
+        "-sX",
+        "-sU",
+        "-sA",
+        "-sW",
+        "-sM",
+        "-sI",
+        "-sO",
+        "-sZ",
+        "-sY",
+    ]
+)
 
 # Options that don't work through SOCKS5 / proxychains (may have values)
-_NMAP_INVALID_OPTS = frozenset([
-    '-O',
-    '--osscan-guess',
-    '--osscan-limit',
-    '--max-os-tries',
-])
+_NMAP_INVALID_OPTS = frozenset(
+    [
+        "-O",
+        "--osscan-guess",
+        "--osscan-limit",
+        "--max-os-tries",
+    ]
+)
 
 
 def _sanitize_nmap_args(args: List[str]) -> List[str]:
@@ -198,7 +217,7 @@ def _sanitize_nmap_args(args: List[str]) -> List[str]:
         # Drop OS detection and related options
         if arg in _NMAP_INVALID_OPTS:
             dropped.append(arg)
-            if i + 1 < len(args) and not args[i + 1].startswith('-'):
+            if i + 1 < len(args) and not args[i + 1].startswith("-"):
                 dropped.append(args[i + 1])
                 i += 2
             else:
@@ -206,15 +225,15 @@ def _sanitize_nmap_args(args: List[str]) -> List[str]:
             continue
 
         # Drop traceroute (requires ICMP)
-        if arg == '--traceroute':
+        if arg == "--traceroute":
             dropped.append(arg)
             i += 1
             continue
 
         # Drop raw scanflags manipulation
-        if arg == '--scanflags':
+        if arg == "--scanflags":
             dropped.append(arg)
-            if i + 1 < len(args) and not args[i + 1].startswith('-'):
+            if i + 1 < len(args) and not args[i + 1].startswith("-"):
                 dropped.append(args[i + 1])
                 i += 2
             else:
@@ -228,18 +247,18 @@ def _sanitize_nmap_args(args: List[str]) -> List[str]:
         logger.warning(f"Dropped incompatible nmap flags: {', '.join(dropped)}")
 
     # Force prepend required flags (insert in reverse so -Pn ends up first)
-    for flag in reversed(('-Pn', '-sT')):
+    for flag in reversed(("-Pn", "-sT")):
         if flag not in sanitized:
             sanitized.insert(0, flag)
 
     # Auto-add --max-parallelism if not present (prevents proxy overload)
-    if '--max-parallelism' not in sanitized and '-T' not in ''.join(sanitized):
-        sanitized.append('--max-parallelism')
-        sanitized.append('10')
+    if "--max-parallelism" not in sanitized and "-T" not in "".join(sanitized):
+        sanitized.append("--max-parallelism")
+        sanitized.append("10")
         logger.info("Added --max-parallelism 10 to prevent proxy overload")
 
     # Suggest -n if not present (DNS through proxychains can be buggy)
-    if '-n' not in sanitized and '-R' not in sanitized:
+    if "-n" not in sanitized and "-R" not in sanitized:
         logger.info("Tip: add -n to skip DNS resolution (more reliable through proxies)")
 
     return sanitized
@@ -252,7 +271,7 @@ def _sanitize_nmap_args(args: List[str]) -> List[str]:
 
 def pcurl(
     args: List[str],
-    host: str = '127.0.0.1',
+    host: str = "127.0.0.1",
     port: Optional[int] = None,
     *,
     timeout: Optional[int] = 30,
@@ -276,7 +295,7 @@ def pcurl(
     if not check_proxy(host, port):
         return 1
     return _run(
-        ['curl', '--socks5-hostname', f'{host}:{port}'] + args,
+        ["curl", "--socks5-hostname", f"{host}:{port}"] + args,
         capture_output=False,
         timeout=timeout,
     ).returncode
@@ -284,7 +303,7 @@ def pcurl(
 
 def pwget(
     args: List[str],
-    host: str = '127.0.0.1',
+    host: str = "127.0.0.1",
     port: Optional[int] = None,
     *,
     timeout: Optional[int] = 300,
@@ -305,11 +324,11 @@ def pwget(
     """
     config = Config()
     port = port or _get_proxy_port(config)
-    proxychains_conf = config.config_dir / 'proxychains.conf'
+    proxychains_conf = config.config_dir / "proxychains.conf"
     if not check_proxy(host, port):
         return 1
     return _run(
-        ['proxychains4', '-q', '-f', str(proxychains_conf), 'wget'] + args,
+        ["proxychains4", "-q", "-f", str(proxychains_conf), "wget"] + args,
         capture_output=False,
         timeout=timeout,
     ).returncode
@@ -317,7 +336,7 @@ def pwget(
 
 def pnmap(
     args: List[str],
-    host: str = '127.0.0.1',
+    host: str = "127.0.0.1",
     port: Optional[int] = None,
     *,
     timeout: Optional[int] = 600,
@@ -343,12 +362,12 @@ def pnmap(
     """
     config = Config()
     port = port or _get_proxy_port(config)
-    proxychains_conf = config.config_dir / 'proxychains.conf'
+    proxychains_conf = config.config_dir / "proxychains.conf"
     if not check_proxy(host, port):
         return 1
     args = _sanitize_nmap_args(args)
     return _run(
-        ['proxychains4', '-q', '-f', str(proxychains_conf), 'nmap'] + args,
+        ["proxychains4", "-q", "-f", str(proxychains_conf), "nmap"] + args,
         capture_output=False,
         timeout=timeout,
     ).returncode
@@ -356,7 +375,7 @@ def pnmap(
 
 def pnuclei(
     args: List[str],
-    host: str = '127.0.0.1',
+    host: str = "127.0.0.1",
     port: Optional[int] = None,
     *,
     timeout: Optional[int] = 600,
@@ -381,7 +400,7 @@ def pnuclei(
         return 1
     env = _proxy_env(host, port)
     return _run(
-        ['nuclei'] + args,
+        ["nuclei"] + args,
         env=env,
         capture_output=False,
         timeout=timeout,
@@ -404,7 +423,7 @@ def _sanitize_ffuf_args(args: List[str]) -> List[str]:
     i = 0
     while i < len(sanitized):
         arg = sanitized[i]
-        if arg == '-t':
+        if arg == "-t":
             if i + 1 < len(sanitized):
                 thread_idx = i
                 try:
@@ -412,7 +431,7 @@ def _sanitize_ffuf_args(args: List[str]) -> List[str]:
                 except ValueError:
                     pass
             break
-        if arg.startswith('-t') and len(arg) > 2:
+        if arg.startswith("-t") and len(arg) > 2:
             thread_idx = i
             try:
                 thread_val = int(arg[2:])
@@ -423,24 +442,23 @@ def _sanitize_ffuf_args(args: List[str]) -> List[str]:
 
     if thread_val is None:
         # ffuf default is 40; enforce our cap when not explicitly set
-        sanitized.append('-t')
-        sanitized.append('20')
-        logger.info('Capped ffuf threads to 20 (default 40 would overload the proxy)')
+        sanitized.append("-t")
+        sanitized.append("20")
+        logger.info("Capped ffuf threads to 20 (default 40 would overload the proxy)")
     elif thread_val > 20:
-        if sanitized[thread_idx].startswith('-t') and len(sanitized[thread_idx]) > 2:
-            sanitized[thread_idx] = '-t20'
+        assert thread_idx is not None  # thread_val set implies thread_idx set
+        if sanitized[thread_idx].startswith("-t") and len(sanitized[thread_idx]) > 2:
+            sanitized[thread_idx] = "-t20"
         else:
-            sanitized[thread_idx + 1] = '20'
-        logger.warning(
-            f'Reduced ffuf threads from {thread_val} to 20 to protect the SOCKS5 tunnel'
-        )
+            sanitized[thread_idx + 1] = "20"
+        logger.warning(f"Reduced ffuf threads from {thread_val} to 20 to protect the SOCKS5 tunnel")
 
     return sanitized
 
 
 def pffuf(
     args: List[str],
-    host: str = '127.0.0.1',
+    host: str = "127.0.0.1",
     port: Optional[int] = None,
     *,
     timeout: Optional[int] = 600,
@@ -467,7 +485,7 @@ def pffuf(
         return 1
     args = _sanitize_ffuf_args(args)
     return _run(
-        ['ffuf', '-x', f'socks5://{host}:{port}'] + args,
+        ["ffuf", "-x", f"socks5://{host}:{port}"] + args,
         capture_output=False,
         timeout=timeout,
     ).returncode
@@ -475,7 +493,7 @@ def pffuf(
 
 def phttpx(
     args: List[str],
-    host: str = '127.0.0.1',
+    host: str = "127.0.0.1",
     port: Optional[int] = None,
     *,
     timeout: Optional[int] = 300,
@@ -499,7 +517,7 @@ def phttpx(
     if not check_proxy(host, port):
         return 1
     return _run(
-        ['httpx', '-proxy', f'socks5://{host}:{port}'] + args,
+        ["httpx", "-proxy", f"socks5://{host}:{port}"] + args,
         capture_output=False,
         timeout=timeout,
     ).returncode
@@ -507,7 +525,7 @@ def phttpx(
 
 def psqlmap(
     args: List[str],
-    host: str = '127.0.0.1',
+    host: str = "127.0.0.1",
     port: Optional[int] = None,
     *,
     timeout: Optional[int] = 600,
@@ -531,7 +549,7 @@ def psqlmap(
     if not check_proxy(host, port):
         return 1
     return _run(
-        ['sqlmap', f'--proxy=socks5://{host}:{port}'] + args,
+        ["sqlmap", f"--proxy=socks5://{host}:{port}"] + args,
         capture_output=False,
         timeout=timeout,
     ).returncode
@@ -539,7 +557,7 @@ def psqlmap(
 
 def pcs(
     args: List[str],
-    host: str = '127.0.0.1',
+    host: str = "127.0.0.1",
     port: Optional[int] = None,
     *,
     timeout: Optional[int] = 600,
@@ -563,14 +581,14 @@ def pcs(
     logger = get_logger()
     config = Config()
     port = port or _get_proxy_port(config)
-    proxychains_conf = config.config_dir / 'proxychains.conf'
+    proxychains_conf = config.config_dir / "proxychains.conf"
     if not check_proxy(host, port):
         return 1
     if args and not shutil.which(args[0]):
         logger.error(f"Command not found: {args[0]}")
         return 127
     return _run(
-        ['proxychains4', '-q', '-f', str(proxychains_conf)] + args,
+        ["proxychains4", "-q", "-f", str(proxychains_conf)] + args,
         capture_output=False,
         timeout=timeout,
     ).returncode
@@ -582,7 +600,7 @@ def pcs(
 
 
 def ipcheck(
-    host: str = '127.0.0.1',
+    host: str = "127.0.0.1",
     port: Optional[int] = None,
     *,
     timeout: Optional[int] = 10,
@@ -597,24 +615,29 @@ def ipcheck(
 
     # Direct IP
     result = _run(
-        ['curl', '-s', '--connect-timeout', '5', 'https://ifconfig.me'],
+        ["curl", "-s", "--connect-timeout", "5", "https://ifconfig.me"],
         capture_output=True,
         text=True,
         timeout=timeout,
     )
-    direct_ip = result.stdout.strip() if result.returncode == 0 else 'timeout'
+    direct_ip = result.stdout.strip() if result.returncode == 0 else "timeout"
 
     # Proxied IP
     result = _run(
         [
-            'curl', '-s', '--connect-timeout', '5',
-            '--socks5-hostname', f'{host}:{port}', 'https://ifconfig.me',
+            "curl",
+            "-s",
+            "--connect-timeout",
+            "5",
+            "--socks5-hostname",
+            f"{host}:{port}",
+            "https://ifconfig.me",
         ],
         capture_output=True,
         text=True,
         timeout=timeout,
     )
-    proxied_ip = result.stdout.strip() if result.returncode == 0 else 'not connected'
+    proxied_ip = result.stdout.strip() if result.returncode == 0 else "not connected"
 
     print(f"Direct IP:  {direct_ip}")
     print(f"Proxied IP: {proxied_ip}")
@@ -627,7 +650,7 @@ def ipcheck(
 
 def psub(
     domain: str,
-    host: str = '127.0.0.1',
+    host: str = "127.0.0.1",
     port: Optional[int] = None,
     *,
     timeout: Optional[int] = 300,
@@ -661,16 +684,16 @@ def psub(
 
     print(f"[*] Enumerating subdomains for: {domain}")
 
-    if not shutil.which('subfinder'):
+    if not shutil.which("subfinder"):
         print("[!] subfinder not installed")
         return 1
 
     subfinder = subprocess.Popen(
-        ['subfinder', '-d', domain, '-silent'],
+        ["subfinder", "-d", domain, "-silent"],
         stdout=subprocess.PIPE,
     )
     result = _run(
-        ['httpx', '-proxy', f'socks5://{host}:{port}', '-silent'],
+        ["httpx", "-proxy", f"socks5://{host}:{port}", "-silent"],
         stdin=subfinder.stdout,
         capture_output=False,
         timeout=timeout,
@@ -681,8 +704,8 @@ def psub(
 
 def pportscan(
     target: str,
-    ports: str = '21,22,23,25,80,443,445,3306,3389,8080,8443',
-    host: str = '127.0.0.1',
+    ports: str = "21,22,23,25,80,443,445,3306,3389,8080,8443",
+    host: str = "127.0.0.1",
     port: Optional[int] = None,
     *,
     timeout: Optional[int] = 300,
@@ -710,7 +733,7 @@ def pportscan(
         return 1
 
     print(f"[*] Scanning {target} ports: {ports}")
-    return pnmap(['-p', ports, target], host=host, port=port, timeout=timeout)
+    return pnmap(["-p", ports, target], host=host, port=port, timeout=timeout)
 
 
 # =============================================================================
@@ -770,17 +793,17 @@ EXAMPLES:
 # =============================================================================
 
 TOOL_COMMANDS = {
-    'pcurl':     ('pcurl', pcurl),
-    'pwget':     ('pwget', pwget),
-    'pnmap':     ('pnmap', pnmap),
-    'pnuclei':   ('pnuclei', pnuclei),
-    'pffuf':     ('pffuf', pffuf),
-    'phttpx':    ('phttpx', phttpx),
-    'psqlmap':   ('psqlmap', psqlmap),
-    'pcs':       ('pcs', pcs),
+    "pcurl": ("pcurl", pcurl),
+    "pwget": ("pwget", pwget),
+    "pnmap": ("pnmap", pnmap),
+    "pnuclei": ("pnuclei", pnuclei),
+    "pffuf": ("pffuf", pffuf),
+    "phttpx": ("phttpx", phttpx),
+    "psqlmap": ("psqlmap", psqlmap),
+    "pcs": ("pcs", pcs),
 }
 
-ALL_TOOLS = set(TOOL_COMMANDS) | {'ipcheck', 'psub', 'pportscan', 'help'}
+ALL_TOOLS = set(TOOL_COMMANDS) | {"ipcheck", "psub", "pportscan", "help"}
 
 
 def main_tools(argv=None):
@@ -800,16 +823,16 @@ def main_tools(argv=None):
 
     # Pre-parse global flags that appear before the tool name
     pre_parser = argparse.ArgumentParser(add_help=False)
-    pre_parser.add_argument('--port', type=int)
-    pre_parser.add_argument('--host', default='127.0.0.1')
-    pre_parser.add_argument('--dry-run', action='store_true')
-    pre_parser.add_argument('--timeout', type=int)
-    pre_parser.add_argument('-h', '--help', action='store_true')
+    pre_parser.add_argument("--port", type=int)
+    pre_parser.add_argument("--host", default="127.0.0.1")
+    pre_parser.add_argument("--dry-run", action="store_true")
+    pre_parser.add_argument("--timeout", type=int)
+    pre_parser.add_argument("-h", "--help", action="store_true")
 
     # Find split point: first non-option that is a known tool
     split = len(argv)
     for i, arg in enumerate(argv):
-        if not arg.startswith('-') and arg in ALL_TOOLS:
+        if not arg.startswith("-") and arg in ALL_TOOLS:
             split = i
             break
 
@@ -824,7 +847,7 @@ def main_tools(argv=None):
 
     if split == len(argv):
         # No known tool found in argv
-        non_options = [a for a in argv if not a.startswith('-')]
+        non_options = [a for a in argv if not a.startswith("-")]
         if non_options:
             logger.error(f"Unknown tool: {non_options[0]}. Run 'cs-tools help' for usage.")
             return 1
@@ -832,9 +855,9 @@ def main_tools(argv=None):
         return 0
 
     tool = argv[split]
-    tool_args = argv[split + 1:]
+    tool_args = argv[split + 1 :]
 
-    if tool == 'help':
+    if tool == "help":
         show_help()
         return 0
 
@@ -844,49 +867,39 @@ def main_tools(argv=None):
     timeout = parsed.timeout
 
     # Single-arg commands
-    if tool == 'ipcheck':
+    if tool == "ipcheck":
         if dry_run:
             print(f"[dry-run] ipcheck(host={host!r}, port={port!r})")
             return 0
         ipcheck(host=host, port=port, timeout=timeout or 10)
         return 0
 
-    if tool == 'psub':
+    if tool == "psub":
         if not tool_args:
             print("Usage: cs-tools psub domain.com")
             return 1
         if dry_run:
-            print(
-                f"[dry-run] psub(domain={tool_args[0]!r}, host={host!r}, port={port!r})"
-            )
+            print(f"[dry-run] psub(domain={tool_args[0]!r}, host={host!r}, port={port!r})")
             return 0
         return psub(tool_args[0], host=host, port=port, timeout=timeout or 300)
 
-    if tool == 'pportscan':
+    if tool == "pportscan":
         if not tool_args:
             print("Usage: cs-tools pportscan target [ports]")
             return 1
-        ports = (
-            tool_args[1]
-            if len(tool_args) > 1
-            else '21,22,23,25,80,443,445,3306,3389,8080,8443'
-        )
+        ports = tool_args[1] if len(tool_args) > 1 else "21,22,23,25,80,443,445,3306,3389,8080,8443"
         if dry_run:
             print(
                 f"[dry-run] pportscan(target={tool_args[0]!r}, ports={ports!r}, "
                 f"host={host!r}, port={port!r})"
             )
             return 0
-        return pportscan(
-            tool_args[0], ports, host=host, port=port, timeout=timeout or 300
-        )
+        return pportscan(tool_args[0], ports, host=host, port=port, timeout=timeout or 300)
 
     if tool in TOOL_COMMANDS:
         _, fn = TOOL_COMMANDS[tool]
         if dry_run:
-            print(
-                f"[dry-run] {tool}(args={tool_args!r}, host={host!r}, port={port!r})"
-            )
+            print(f"[dry-run] {tool}(args={tool_args!r}, host={host!r}, port={port!r})")
             return 0
         try:
             return fn(tool_args, host=host, port=port, timeout=timeout)
@@ -898,5 +911,5 @@ def main_tools(argv=None):
     return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main_tools())

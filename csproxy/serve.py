@@ -13,8 +13,6 @@ from posixpath import normpath
 from pathlib import Path
 from typing import Optional
 
-MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB cap on file uploads
-
 from .github import GitHubManager
 from .templates import (
     FILE_SERVER_SCRIPT as _FILE_SERVER_SCRIPT,  # noqa: F401
@@ -24,6 +22,7 @@ from .templates import (
 )
 from .utils import Config, get_logger
 
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB cap on file uploads
 VERSION = "1.0.0"
 DEFAULT_PORT = 9999
 SERVE_DIR = "/tmp/serve"
@@ -51,26 +50,31 @@ def _get_available_codespace(gh: GitHubManager, config: Config) -> str:
         RuntimeError: If no running Codespace is found
     """
     # Check config first (set by -c CLI flag or config file)
-    cs_name = config.codespace_name or ''
+    cs_name = config.codespace_name or ""
 
     # Fall back to environment variable
     if not cs_name:
         import os
-        cs_name = os.environ.get('CODESPACE_NAME', '')
+
+        cs_name = os.environ.get("CODESPACE_NAME", "")
 
     # Fall back to first available codespace
     if not cs_name:
         result = gh.run_gh_command(
-            ['codespace', 'list', '--json', 'name,state',
-             '-q', '.[] | select(.state=="Available") | .name'],
-            check=False
+            [
+                "codespace",
+                "list",
+                "--json",
+                "name,state",
+                "-q",
+                '.[] | select(.state=="Available") | .name',
+            ],
+            check=False,
         )
-        cs_name = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ''
+        cs_name = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
 
     if not cs_name:
-        raise RuntimeError(
-            "No running Codespace found. Start one with: cs-proxy create"
-        )
+        raise RuntimeError("No running Codespace found. Start one with: cs-proxy create")
 
     return cs_name
 
@@ -100,8 +104,9 @@ def _validate_remote_path(remote_path: str) -> None:
             raise ValueError(f"Absolute paths outside {SERVE_DIR} are not allowed: {remote_path}")
 
 
-def _ssh(gh: GitHubManager, cs_name: str, command: str,
-         stdin: Optional[bytes] = None) -> subprocess.CompletedProcess:
+def _ssh(
+    gh: GitHubManager, cs_name: str, command: str, stdin: Optional[bytes] = None
+) -> subprocess.CompletedProcess:
     """
     Run a shell command in a Codespace via gh codespace ssh.
 
@@ -114,7 +119,7 @@ def _ssh(gh: GitHubManager, cs_name: str, command: str,
     Returns:
         CompletedProcess result
     """
-    cmd = ['gh', 'codespace', 'ssh', '--codespace', cs_name, '--', command]
+    cmd = ["gh", "codespace", "ssh", "--codespace", cs_name, "--", command]
     return gh.runner.run(
         cmd,
         input=stdin,
@@ -124,8 +129,7 @@ def _ssh(gh: GitHubManager, cs_name: str, command: str,
     )
 
 
-def _upload_script(gh: GitHubManager, cs_name: str,
-                   remote_path: str, content: str) -> None:
+def _upload_script(gh: GitHubManager, cs_name: str, remote_path: str, content: str) -> None:
     """
     Upload a script to the Codespace by piping content via stdin.
 
@@ -140,8 +144,15 @@ def _upload_script(gh: GitHubManager, cs_name: str,
     """
     logger = get_logger()
     _validate_remote_path(remote_path)
-    cmd = ['gh', 'codespace', 'ssh', '--codespace', cs_name,
-           '--', f'cat > {shlex.quote(remote_path)}']
+    cmd = [
+        "gh",
+        "codespace",
+        "ssh",
+        "--codespace",
+        cs_name,
+        "--",
+        f"cat > {shlex.quote(remote_path)}",
+    ]
     result = gh.runner.run(
         cmd,
         input=content.encode(),
@@ -151,14 +162,12 @@ def _upload_script(gh: GitHubManager, cs_name: str,
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"Failed to upload script to {remote_path}: "
-            f"{result.stderr.decode().strip()}"
+            f"Failed to upload script to {remote_path}: " f"{result.stderr.decode().strip()}"
         )
     logger.debug(f"Uploaded script to Codespace:{remote_path}")
 
 
-def _upload_file(gh: GitHubManager, cs_name: str,
-                 local_path: Path, remote_path: str) -> None:
+def _upload_file(gh: GitHubManager, cs_name: str, local_path: Path, remote_path: str) -> None:
     """
     Upload a local file to the Codespace via stdin.
 
@@ -179,19 +188,19 @@ def _upload_file(gh: GitHubManager, cs_name: str,
             f"(max {MAX_UPLOAD_BYTES / 1024 / 1024:.0f} MB)"
         )
     content = local_path.read_bytes()
-    cmd = ['gh', 'codespace', 'ssh', '--codespace', cs_name,
-           '--', f'cat > {shlex.quote(remote_path)}']
-    result = gh.runner.run(
-        cmd,
-        input=content,
-        capture_output=True,
-        text=False,
-        timeout=60
-    )
+    cmd = [
+        "gh",
+        "codespace",
+        "ssh",
+        "--codespace",
+        cs_name,
+        "--",
+        f"cat > {shlex.quote(remote_path)}",
+    ]
+    result = gh.runner.run(cmd, input=content, capture_output=True, text=False, timeout=60)
     if result.returncode != 0:
         raise RuntimeError(
-            f"Failed to upload {local_path.name}: "
-            f"{result.stderr.decode().strip()}"
+            f"Failed to upload {local_path.name}: " f"{result.stderr.decode().strip()}"
         )
     logger.info(f"  Uploaded: {local_path.name}")
 
@@ -211,20 +220,23 @@ def _setup_server_environment(gh: GitHubManager, cs_name: str, port: int) -> Non
     logger.info(f"Stopping any existing server on port {port}...")
 
     # Kill old server processes and any process holding the port on Codespace
-    _ssh(gh, cs_name,
-         f"pkill -9 -f 'csproxy_server_{shlex.quote(str(port))}' || true; "
-         f"pkill -9 -f 'csproxy_redirect_{shlex.quote(str(port))}' || true; "
-         f"pkill -9 -f 'csproxy_custom_{shlex.quote(str(port))}' || true; "
-         f"pkill -9 -f 'csproxy_capture_{shlex.quote(str(port))}' || true; "
-         f"fuser -k -9 {shlex.quote(str(port))}/tcp 2>/dev/null || true; "
-         f"lsof -ti:{shlex.quote(str(port))} | xargs kill -9 2>/dev/null || true; "
-         "sleep 2")
+    _ssh(
+        gh,
+        cs_name,
+        f"pkill -9 -f 'csproxy_server_{shlex.quote(str(port))}' || true; "
+        f"pkill -9 -f 'csproxy_redirect_{shlex.quote(str(port))}' || true; "
+        f"pkill -9 -f 'csproxy_custom_{shlex.quote(str(port))}' || true; "
+        f"pkill -9 -f 'csproxy_capture_{shlex.quote(str(port))}' || true; "
+        f"fuser -k -9 {shlex.quote(str(port))}/tcp 2>/dev/null || true; "
+        f"lsof -ti:{shlex.quote(str(port))} | xargs kill -9 2>/dev/null || true; "
+        "sleep 2",
+    )
 
     # Kill local port forward processes
     try:
         gh.runner.run(
-            ['pkill', '-f', f'gh codespace ports forward {shlex.quote(str(port))}'],
-            capture_output=True
+            ["pkill", "-f", f"gh codespace ports forward {shlex.quote(str(port))}"],
+            capture_output=True,
         )
     except FileNotFoundError:
         pass  # pkill not available (Windows)
@@ -235,8 +247,9 @@ def _setup_server_environment(gh: GitHubManager, cs_name: str, port: int) -> Non
     _ssh(gh, cs_name, "mkdir -p /tmp/serve")
 
 
-def _start_port_forwarding(gh: GitHubManager, cs_name: str, port: int,
-                           set_public: bool = True) -> subprocess.Popen:
+def _start_port_forwarding(
+    gh: GitHubManager, cs_name: str, port: int, set_public: bool = True
+) -> subprocess.Popen:
     """
     Start port forwarding from Codespace port to local port.
 
@@ -258,17 +271,17 @@ def _start_port_forwarding(gh: GitHubManager, cs_name: str, port: int,
 
     # Start port forward in background
     fwd_process = subprocess.Popen(
-        ['gh', 'codespace', 'ports', 'forward', f'{port}:{port}', '--codespace', cs_name],
+        ["gh", "codespace", "ports", "forward", f"{port}:{port}", "--codespace", cs_name],
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
+        stderr=subprocess.DEVNULL,
     )
     time.sleep(2)
 
     if set_public:
         # Make port public
         gh.run_gh_command(
-            ['codespace', 'ports', 'visibility', f'{port}:public', '--codespace', cs_name],
-            check=False
+            ["codespace", "ports", "visibility", f"{port}:public", "--codespace", cs_name],
+            check=False,
         )
 
     return fwd_process
@@ -291,7 +304,7 @@ def _verify_server_running(gh: GitHubManager, cs_name: str, process_name: str) -
     logger = get_logger()
     result = _ssh(gh, cs_name, f"pgrep -f {shlex.quote(process_name)} && echo OK")
 
-    if b'OK' not in result.stdout:
+    if b"OK" not in result.stdout:
         # Show server log for debugging
         log_result = _ssh(gh, cs_name, "cat /tmp/serve/server.log")
         logger.error("Failed to start server. Remote log:")
@@ -316,10 +329,10 @@ def _tail_remote_logs(gh: GitHubManager, cs_name: str, new_only: bool = False) -
                   stream new lines. Used on reconnect to avoid replaying stale
                   messages (e.g. old 'Port busy' retries) from a previous session.
     """
-    tail_cmd = 'tail -n 0 -f /tmp/serve/server.log' if new_only else 'tail -f /tmp/serve/server.log'
+    tail_cmd = "tail -n 0 -f /tmp/serve/server.log" if new_only else "tail -f /tmp/serve/server.log"
     try:
         gh.runner.run(
-            ['gh', 'codespace', 'ssh', '--codespace', cs_name, '--', tail_cmd],
+            ["gh", "codespace", "ssh", "--codespace", cs_name, "--", tail_cmd],
             capture_output=False,
             timeout=None,
         )
@@ -358,11 +371,18 @@ def _download_captures(gh: GitHubManager, cs_name: str) -> None:
         local_path = Path(filename)
 
         dl_result = gh.runner.run(
-            ['gh', 'codespace', 'ssh', '--codespace', cs_name,
-             '--', f'cat {shlex.quote(remote_path)}'],
+            [
+                "gh",
+                "codespace",
+                "ssh",
+                "--codespace",
+                cs_name,
+                "--",
+                f"cat {shlex.quote(remote_path)}",
+            ],
             capture_output=True,
             text=False,
-            timeout=30
+            timeout=30,
         )
 
         if dl_result.returncode == 0:
@@ -412,19 +432,26 @@ def _is_server_running(gh: GitHubManager, cs_name: str, script_name: str, port: 
         True if the process is running and the port is bound
     """
     result = _ssh(
-        gh, cs_name,
+        gh,
+        cs_name,
         f"pgrep -f {shlex.quote(script_name)} > /dev/null 2>&1 "
         f"&& ss -tln 2>/dev/null | grep -q ':{shlex.quote(str(port))} ' "
-        f"&& echo RUNNING || true"
+        f"&& echo RUNNING || true",
     )
-    return b'RUNNING' in result.stdout
+    return b"RUNNING" in result.stdout
 
 
-def _launch_server(gh: GitHubManager, cs_name: str, port: int,
-                   script: str, script_name: str,
-                   banner_fn, domain: str = None,
-                   config: 'Config' = None,
-                   reconnect: bool = False) -> None:
+def _launch_server(
+    gh: GitHubManager,
+    cs_name: str,
+    port: int,
+    script: str,
+    script_name: str,
+    banner_fn,
+    domain: Optional[str] = None,
+    config: Optional["Config"] = None,
+    reconnect: bool = False,
+) -> None:
     """
     Upload a server script, start it, forward the port, show banner, and tail logs.
 
@@ -454,8 +481,12 @@ def _launch_server(gh: GitHubManager, cs_name: str, port: int,
         _upload_script(gh, cs_name, f"{SERVE_DIR}/{script_name}", script)
 
         logger.info(f"Starting server on port {port}...")
-        _ssh(gh, cs_name,
-             f"cd {shlex.quote(SERVE_DIR)}; nohup python3 {shlex.quote(script_name)} > server.log 2>&1 & sleep 1; exit 0")
+        _ssh(
+            gh,
+            cs_name,
+            f"cd {shlex.quote(SERVE_DIR)}; "
+            f"nohup python3 {shlex.quote(script_name)} > server.log 2>&1 & sleep 1; exit 0",
+        )
         time.sleep(1)
 
         _verify_server_running(gh, cs_name, script_name)
@@ -468,6 +499,7 @@ def _launch_server(gh: GitHubManager, cs_name: str, port: int,
     cf_worker = None
     if domain and config:
         from .cloudflare import setup_worker
+
         codespace_url = f"{cs_name}-{port}.app.github.dev"
         cf_worker = setup_worker(codespace_url, domain, config)
 
@@ -489,8 +521,13 @@ def _launch_server(gh: GitHubManager, cs_name: str, port: int,
 # =============================================================================
 
 
-def serve_file(file_path: Path, port: int, gh: GitHubManager,
-               config: Config = None, domain: str = None) -> None:
+def serve_file(
+    file_path: Path,
+    port: int,
+    gh: GitHubManager,
+    config: Optional[Config] = None,
+    domain: Optional[str] = None,
+) -> None:
     """
     Upload a single file to a Codespace and serve it via HTTP.
 
@@ -518,19 +555,30 @@ def serve_file(file_path: Path, port: int, gh: GitHubManager,
         print(f"File URL:\n  {file_url}\n")
         if domain:
             print(f"Custom domain:\n  https://{domain}/{file_path.name}\n")
-        print(f"curl command:\n  curl -L \"{file_url}\"\n")
-        print(f"wget command:\n  wget \"{file_url}\"\n")
+        print(f'curl command:\n  curl -L "{file_url}"\n')
+        print(f'wget command:\n  wget "{file_url}"\n')
         print(f"Local access:\n  curl http://localhost:{p}/{file_path.name}\n")
         print("Press Ctrl+C to stop serving\n")
 
-    _launch_server(gh, cs_name, port,
-                   script=_FILE_SERVER_SCRIPT.format(PORT=port),
-                   script_name=f"csproxy_server_{port}.py",
-                   banner_fn=banner, domain=domain, config=config)
+    _launch_server(
+        gh,
+        cs_name,
+        port,
+        script=_FILE_SERVER_SCRIPT.format(PORT=port),
+        script_name=f"csproxy_server_{port}.py",
+        banner_fn=banner,
+        domain=domain,
+        config=config,
+    )
 
 
-def serve_directory(dir_path: Path, port: int, gh: GitHubManager,
-                    config: Config = None, domain: str = None) -> None:
+def serve_directory(
+    dir_path: Path,
+    port: int,
+    gh: GitHubManager,
+    config: Optional[Config] = None,
+    domain: Optional[str] = None,
+) -> None:
     """
     Upload a directory to a Codespace and serve it via HTTP.
 
@@ -568,15 +616,26 @@ def serve_directory(dir_path: Path, port: int, gh: GitHubManager,
             print(f"  {base_url}{f.name}")
         print("\nPress Ctrl+C to stop serving\n")
 
-    _launch_server(gh, cs_name, port,
-                   script=_FILE_SERVER_SCRIPT.format(PORT=port),
-                   script_name=f"csproxy_server_{port}.py",
-                   banner_fn=banner, domain=domain, config=config)
+    _launch_server(
+        gh,
+        cs_name,
+        port,
+        script=_FILE_SERVER_SCRIPT.format(PORT=port),
+        script_name=f"csproxy_server_{port}.py",
+        banner_fn=banner,
+        domain=domain,
+        config=config,
+    )
 
 
-def serve_redirect(target_url: str, port: int, redirect_code: int,
-                   gh: GitHubManager, config: Config = None,
-                   domain: str = None) -> None:
+def serve_redirect(
+    target_url: str,
+    port: int,
+    redirect_code: int,
+    gh: GitHubManager,
+    config: Optional[Config] = None,
+    domain: Optional[str] = None,
+) -> None:
     """
     Start an HTTP redirect server in a Codespace.
 
@@ -604,22 +663,33 @@ def serve_redirect(target_url: str, port: int, redirect_code: int,
         print(f"Target:\n  {target_url}\n")
         print(f"Redirect Type:\n  HTTP {redirect_code}\n")
         print(f"Local access:\n  curl -v http://localhost:{p}/\n")
-        print(f"Test with:\n  curl -v -L \"{url}\"")
-        print(f"  curl -v \"{url}\" 2>&1 | grep -i location\n")
+        print(f'Test with:\n  curl -v -L "{url}"')
+        print(f'  curl -v "{url}" 2>&1 | grep -i location\n')
         print("Press Ctrl+C to stop\n")
 
-    _launch_server(gh, cs_name, port,
-                   script=_REDIRECT_SERVER_SCRIPT.format(
-                       TARGET_URL=target_url,
-                       REDIRECT_CODE=redirect_code,
-                       PORT=port),
-                   script_name=f"csproxy_redirect_{port}.py",
-                   banner_fn=banner, domain=domain, config=config)
+    _launch_server(
+        gh,
+        cs_name,
+        port,
+        script=_REDIRECT_SERVER_SCRIPT.format(
+            TARGET_URL=target_url, REDIRECT_CODE=redirect_code, PORT=port
+        ),
+        script_name=f"csproxy_redirect_{port}.py",
+        banner_fn=banner,
+        domain=domain,
+        config=config,
+    )
 
 
-def serve_custom(port: int, response_body: str, content_type: str,
-                 status_code: int, gh: GitHubManager, config: Config = None,
-                 domain: str = None) -> None:
+def serve_custom(
+    port: int,
+    response_body: str,
+    content_type: str,
+    status_code: int,
+    gh: GitHubManager,
+    config: Optional[Config] = None,
+    domain: Optional[str] = None,
+) -> None:
     """
     Start a custom HTTP response server in a Codespace.
 
@@ -650,18 +720,26 @@ def serve_custom(port: int, response_body: str, content_type: str,
         print(f"Body:         {response_body[:60]}{'...' if len(response_body) > 60 else ''}\n")
         print("Press Ctrl+C to stop\n")
 
-    _launch_server(gh, cs_name, port,
-                   script=_CUSTOM_SERVER_SCRIPT.format(
-                       RESPONSE_BODY=response_body,
-                       CONTENT_TYPE=content_type,
-                       STATUS_CODE=status_code,
-                       PORT=port),
-                   script_name=f"csproxy_custom_{port}.py",
-                   banner_fn=banner, domain=domain, config=config)
+    _launch_server(
+        gh,
+        cs_name,
+        port,
+        script=_CUSTOM_SERVER_SCRIPT.format(
+            RESPONSE_BODY=response_body,
+            CONTENT_TYPE=content_type,
+            STATUS_CODE=status_code,
+            PORT=port,
+        ),
+        script_name=f"csproxy_custom_{port}.py",
+        banner_fn=banner,
+        domain=domain,
+        config=config,
+    )
 
 
-def serve_capture(port: int, gh: GitHubManager, config: Config = None,
-                  domain: str = None) -> None:
+def serve_capture(
+    port: int, gh: GitHubManager, config: Optional[Config] = None, domain: Optional[str] = None
+) -> None:
     """
     Start a capture server that logs and saves all incoming POST data.
 
@@ -682,7 +760,7 @@ def serve_capture(port: int, gh: GitHubManager, config: Config = None,
     logger.info(f"Using Codespace: {cs_name}")
     logger.info(f"Port: {port}")
 
-    reconnect = _is_server_running(gh, cs_name, f'csproxy_capture_{port}.py', port)
+    reconnect = _is_server_running(gh, cs_name, f"csproxy_capture_{port}.py", port)
 
     if reconnect:
         logger.info("Existing capture server detected — reconnecting...")
@@ -710,16 +788,22 @@ def serve_capture(port: int, gh: GitHubManager, config: Config = None,
         print("On Ctrl+C, all captures will be downloaded locally.\n")
         print("Press Ctrl+C to stop and download captures\n")
 
-    _launch_server(gh, cs_name, port,
-                   script=_CAPTURE_SERVER_SCRIPT.format(PORT=port),
-                   script_name=f"csproxy_capture_{port}.py",
-                   banner_fn=banner, domain=domain, config=config,
-                   reconnect=reconnect)
+    _launch_server(
+        gh,
+        cs_name,
+        port,
+        script=_CAPTURE_SERVER_SCRIPT.format(PORT=port),
+        script_name=f"csproxy_capture_{port}.py",
+        banner_fn=banner,
+        domain=domain,
+        config=config,
+        reconnect=reconnect,
+    )
 
     _download_captures(gh, cs_name)
 
 
-def stop_server(port: int, gh: GitHubManager, config: Config = None) -> None:
+def stop_server(port: int, gh: GitHubManager, config: Optional[Config] = None) -> None:
     """
     Stop server running on the specified port in the Codespace.
 
@@ -739,20 +823,21 @@ def stop_server(port: int, gh: GitHubManager, config: Config = None) -> None:
 
     try:
         gh.runner.run(
-            ['pkill', '-f', f'gh codespace ports forward {shlex.quote(str(port))}'],
-            capture_output=True
+            ["pkill", "-f", f"gh codespace ports forward {shlex.quote(str(port))}"],
+            capture_output=True,
         )
     except FileNotFoundError:
         pass
 
     # Tear down Cloudflare Worker if credentials are configured
     from .cloudflare import teardown_worker
+
     teardown_worker(port, config)
 
     logger.info("Server stopped")
 
 
-def clean_all(gh: GitHubManager, config: Config = None) -> None:
+def clean_all(gh: GitHubManager, config: Optional[Config] = None) -> None:
     """
     Kill all servers and port forwards on the Codespace.
 
@@ -769,36 +854,36 @@ def clean_all(gh: GitHubManager, config: Config = None) -> None:
     logger.info(f"Cleaning up all servers and port forwards on {cs_name}...")
 
     logger.info("Killing remote Python servers...")
-    _ssh(gh, cs_name,
-         "pkill -f 'python3.*csproxy_' || true; "
-         "pkill -f 'python3 -m http.server' || true")
+    _ssh(
+        gh,
+        cs_name,
+        "pkill -f 'python3.*csproxy_' || true; " "pkill -f 'python3 -m http.server' || true",
+    )
 
     logger.info("Removing /tmp/serve...")
     _ssh(gh, cs_name, "rm -rf /tmp/serve")
 
     logger.info("Killing local port forwards...")
     try:
-        gh.runner.run(['pkill', '-f', 'gh codespace ports forward'], capture_output=True)
+        gh.runner.run(["pkill", "-f", "gh codespace ports forward"], capture_output=True)
     except FileNotFoundError:
         pass
 
     # Tear down any Cloudflare Workers for common ports
     from .cloudflare import teardown_worker
+
     for port in [9999, 8080, 8888]:
         teardown_worker(port, config)
 
     logger.info("Checking remaining forwarded ports...")
-    result = gh.run_gh_command(
-        ['codespace', 'ports', '--codespace', cs_name],
-        check=False
-    )
+    result = gh.run_gh_command(["codespace", "ports", "--codespace", cs_name], check=False)
     if result.stdout.strip():
         print(result.stdout)
 
     logger.info("Cleanup complete!")
 
 
-def list_files(gh: GitHubManager, config: Config = None) -> None:
+def list_files(gh: GitHubManager, config: Optional[Config] = None) -> None:
     """
     List files in /tmp/serve on the Codespace.
 
@@ -830,7 +915,7 @@ def cmd_file(args, config: Config, gh: GitHubManager) -> int:
         port=args.port,
         gh=gh,
         config=config,
-        domain=getattr(args, 'domain', None)
+        domain=getattr(args, "domain", None),
     )
     return 0
 
@@ -842,7 +927,7 @@ def cmd_dir(args, config: Config, gh: GitHubManager) -> int:
         port=args.port,
         gh=gh,
         config=config,
-        domain=getattr(args, 'domain', None)
+        domain=getattr(args, "domain", None),
     )
     return 0
 
@@ -855,7 +940,7 @@ def cmd_redirect(args, config: Config, gh: GitHubManager) -> int:
         redirect_code=args.code,
         gh=gh,
         config=config,
-        domain=getattr(args, 'domain', None)
+        domain=getattr(args, "domain", None),
     )
     return 0
 
@@ -869,25 +954,20 @@ def cmd_custom(args, config: Config, gh: GitHubManager) -> int:
         status_code=args.status,
         gh=gh,
         config=config,
-        domain=getattr(args, 'domain', None)
+        domain=getattr(args, "domain", None),
     )
     return 0
 
 
 def cmd_capture(args, config: Config, gh: GitHubManager) -> int:
     """Start capture server."""
-    serve_capture(
-        port=args.port,
-        gh=gh,
-        config=config,
-        domain=getattr(args, 'domain', None)
-    )
+    serve_capture(port=args.port, gh=gh, config=config, domain=getattr(args, "domain", None))
     return 0
 
 
 def cmd_stop(args, config: Config, gh: GitHubManager) -> int:
     """Stop server on a port."""
-    port = int(args.port) if hasattr(args, 'port') and args.port else DEFAULT_PORT
+    port = int(args.port) if hasattr(args, "port") and args.port else DEFAULT_PORT
     stop_server(port, gh, config=config)
     return 0
 
@@ -1002,13 +1082,13 @@ NOTES:
 
 
 SERVE_COMMANDS = {
-    'file':     cmd_file,
-    'dir':      cmd_dir,
-    'redirect': cmd_redirect,
-    'custom':   cmd_custom,
-    'capture':  cmd_capture,
-    'stop':     cmd_stop,
-    'clean':    cmd_clean,
-    'cleanup':  cmd_clean,   # Alias
-    'list':     cmd_list,
+    "file": cmd_file,
+    "dir": cmd_dir,
+    "redirect": cmd_redirect,
+    "custom": cmd_custom,
+    "capture": cmd_capture,
+    "stop": cmd_stop,
+    "clean": cmd_clean,
+    "cleanup": cmd_clean,  # Alias
+    "list": cmd_list,
 }

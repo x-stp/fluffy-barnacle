@@ -6,6 +6,8 @@ Provides a hierarchy of exceptions for better error handling than the
 Bash die() function from lib/common.sh.
 """
 
+from typing import Optional
+
 
 class CSProxyError(Exception):
     """Base exception for all cs-proxy errors."""
@@ -32,7 +34,7 @@ class DependencyError(CSProxyError):
         Args:
             missing_deps: List of missing dependency names
         """
-        deps_str = ', '.join(missing_deps)
+        deps_str = ", ".join(missing_deps)
         message = f"Missing dependencies: {deps_str}. Please install them first."
         super().__init__(message, exit_code=1)
         self.missing_deps = missing_deps
@@ -54,7 +56,7 @@ class GitHubAuthError(CSProxyError):
 class CodespaceError(CSProxyError):
     """Raised when Codespace operations fail."""
 
-    def __init__(self, message: str, codespace_name: str = None):
+    def __init__(self, message: str, codespace_name: Optional[str] = None):
         """
         Initialize Codespace error.
 
@@ -71,7 +73,7 @@ class CodespaceError(CSProxyError):
 class ConfigError(CSProxyError):
     """Raised when configuration is invalid or cannot be loaded."""
 
-    def __init__(self, message: str, config_file: str = None):
+    def __init__(self, message: str, config_file: Optional[str] = None):
         """
         Initialize config error.
 
@@ -101,7 +103,7 @@ class SSHTunnelError(CSProxyError):
 class ProxyError(CSProxyError):
     """Raised when proxy operations fail."""
 
-    def __init__(self, message: str, port: int = None):
+    def __init__(self, message: str, port: Optional[int] = None):
         """
         Initialize proxy error.
 
