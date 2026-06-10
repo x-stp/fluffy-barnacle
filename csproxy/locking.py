@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Iterator
 
 try:
-    import portalocker  # type: ignore
+    import portalocker
 except ImportError:  # pragma: no cover - exercised by the stdlib fallback tests
-    portalocker = None
+    portalocker = None  # type: ignore[assignment]
 
 if os.name == "nt":  # pragma: no cover - Windows-only fallback
     import msvcrt
