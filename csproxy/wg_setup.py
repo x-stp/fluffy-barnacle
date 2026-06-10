@@ -153,7 +153,10 @@ def select_codespace(gh: GitHubManager, config: Config, sudo_user: Optional[str]
         logger.info("Available Codespaces:")
         print()
         for i, cs in enumerate(cs_list, 1):
-            print(f"  {i:2}) {cs['name']:<40} {cs.get('state','?'):<12} {cs.get('repository','')}")
+            print(
+                f"  {i:2}) {cs['name']:<40} "
+                f"{cs.get('state', '?'):<12} {cs.get('repository', '')}"
+            )
         print()
 
         selection = input("Enter number or name (Enter for most recent): ").strip()
