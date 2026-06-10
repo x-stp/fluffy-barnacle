@@ -51,7 +51,8 @@ def _get_proxy_port(config: Config) -> int:
         state = State(config.config_dir)
         healthy = state.get_tunnels(kind="ssh", status="healthy")
         if healthy:
-            return random.choice(healthy)["port"]
+            port: int = random.choice(healthy)["port"]
+            return port
     except (TimeoutError, OSError, KeyError) as e:
         get_logger().debug(f"Falling back to configured socks_port: {e}")
     return config.socks_port
@@ -445,6 +446,7 @@ def _sanitize_ffuf_args(args: List[str]) -> List[str]:
         sanitized.append("20")
         logger.info("Capped ffuf threads to 20 (default 40 would overload the proxy)")
     elif thread_val > 20:
+        assert thread_idx is not None  # thread_val set implies thread_idx set
         if sanitized[thread_idx].startswith("-t") and len(sanitized[thread_idx]) > 2:
             sanitized[thread_idx] = "-t20"
         else:

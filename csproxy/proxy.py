@@ -485,10 +485,10 @@ def _pick_codespace(args, config: Config, gh: GitHubManager) -> str:
       3. Multiple managed codespaces → show numbered menu
       4. Fallback                    → _get_codespace (active / selector)
     """
-    names = config.codespace_names
+    names: list[str] = config.codespace_names
 
     if args:
-        arg = args[0]
+        arg: str = args[0]
         if arg.isdigit():
             idx = int(arg) - 1
             if 0 <= idx < len(names):

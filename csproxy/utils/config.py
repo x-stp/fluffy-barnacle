@@ -9,7 +9,7 @@ and environment variable overrides.
 import os
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional, Tuple
 
 try:
     import yaml
@@ -145,7 +145,7 @@ class Config:
 
     def _apply_env_overrides(self) -> None:
         """Apply environment variable overrides to configuration."""
-        env_mappings = {
+        env_mappings: dict[str, Tuple[str, Callable[[str], Any]]] = {
             "SOCKS_PORT": ("socks_port", int),
             "HTTP_PROXY_PORT": ("http_proxy_port", int),
             "CODESPACE_NAME": ("codespace_name", str),

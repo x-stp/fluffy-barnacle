@@ -20,6 +20,7 @@ import socket
 from dataclasses import dataclass
 from pathlib import Path
 
+from .github import GitHubManager
 from .state import State
 from .utils import Config, get_logger
 
@@ -36,7 +37,7 @@ class Check:
         return self.status == "PASS"
 
 
-def run_diagnostics(config: Config, gh) -> list[Check]:
+def run_diagnostics(config: Config, gh: GitHubManager) -> list[Check]:
     """
     Run dependency/configuration health checks and return the structured
     results. Extracted from proxy.cmd_check so the same checks back both the
@@ -135,7 +136,7 @@ def list_pool(config: Config, reconcile: bool = True) -> list[dict]:
     return state.get_tunnels(kind="ssh")
 
 
-def list_codespaces_safe(gh) -> list[dict]:
+def list_codespaces_safe(gh: GitHubManager) -> list[dict]:
     """
     Best-effort codespace listing for monitoring views. Returns [] (and logs at
     debug) instead of raising when gh is missing/unauthenticated, so a live

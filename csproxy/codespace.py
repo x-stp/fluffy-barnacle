@@ -48,7 +48,7 @@ class CodespaceSelector:
             self.logger.info("No Codespaces found. Creating one...")
             return self._create_interactively()
         elif len(codespaces) == 1:
-            name = codespaces[0]["name"]
+            name: str = codespaces[0]["name"]
             self.logger.info(f"Auto-selected Codespace: {name}")
             return name
         else:
@@ -79,7 +79,8 @@ class CodespaceSelector:
             check=False,
         )
         if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip().split()
+            machines: list = result.stdout.strip().split()
+            return machines
         return [self.DEFAULT_MACHINE, "standardLinux32gb", "basicLinux32gb"]
 
     def _create_and_wait(self, repo: str, location: str = "") -> str:
@@ -106,7 +107,7 @@ class CodespaceSelector:
                 f"Codespace creation failed. " f"Try manually: gh codespace create -R {repo}"
             )
 
-        name = result.stdout.strip()
+        name: str = result.stdout.strip()
 
         if not name:
             time.sleep(2)
@@ -176,13 +177,14 @@ class CodespaceSelector:
 
         if not selection:
             sorted_cs = sorted(codespaces, key=lambda x: x.get("createdAt", ""), reverse=True)
-            name = sorted_cs[0]["name"]
-            self.logger.info(f"Using most recent: {name}")
-            return name
+            recent: str = sorted_cs[0]["name"]
+            self.logger.info(f"Using most recent: {recent}")
+            return recent
         elif selection.isdigit():
             idx = int(selection) - 1
             if 0 <= idx < len(codespaces):
-                return codespaces[idx]["name"]
+                selected: str = codespaces[idx]["name"]
+                return selected
             raise ValueError(f"Invalid selection: {selection}")
         else:
             return selection

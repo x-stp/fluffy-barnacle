@@ -13,9 +13,11 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional, TypeVar
 
 from .locking import file_lock
+
+T = TypeVar("T")
 
 
 def _pid_exists(pid: int) -> bool:
@@ -84,7 +86,8 @@ class State:
         if not self.path.exists():
             return {"version": 1, "tunnels": []}
         try:
-            return json.loads(self.path.read_text())
+            data: dict = json.loads(self.path.read_text())
+            return data
         except (json.JSONDecodeError, OSError):
             return {"version": 1, "tunnels": []}
 
@@ -112,7 +115,7 @@ class State:
         with file_lock(self._lock_path):
             self._write(data)
 
-    def _update_locked(self, updater):
+    def _update_locked(self, updater: Callable[[dict], T]) -> T:
         """Run a read-modify-write operation under a single file lock."""
         with file_lock(self._lock_path):
             data = self._read()
@@ -215,7 +218,7 @@ class State:
         Returns True if the circuit breaker tripped (status set to 'dead').
         """
 
-        def updater(data):
+        def updater(data) -> bool:
             for t in data.get("tunnels", []):
                 if t.get("port") == port:
                     import time
@@ -228,7 +231,7 @@ class State:
                     t["last_failure"] = now
                     if t["failures"] >= max_failures:
                         t["status"] = "dead"
-                    return t["status"] == "dead"
+                    return bool(t["status"] == "dead")
             return False
 
         return self._update_locked(updater)

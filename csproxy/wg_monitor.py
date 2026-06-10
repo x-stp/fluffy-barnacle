@@ -56,6 +56,7 @@ def monitor_traffic(mode: Optional[str], interface: str = WG_INTERFACE) -> None:
                 stderr=subprocess.DEVNULL,
                 text=True,
             )
+            assert proc.stdout is not None  # stdout=PIPE guarantees a stream
             for line in proc.stdout:
                 line = line.rstrip()
                 if ".80:" in line or " .80 " in line:
@@ -73,6 +74,7 @@ def monitor_traffic(mode: Optional[str], interface: str = WG_INTERFACE) -> None:
                 stderr=subprocess.DEVNULL,
                 text=True,
             )
+            assert proc.stdout is not None  # stdout=PIPE guarantees a stream
             for line in proc.stdout:
                 print(f"{_CYAN}[DNS]{_RESET}  {line.rstrip()}")
 
@@ -85,6 +87,7 @@ def monitor_traffic(mode: Optional[str], interface: str = WG_INTERFACE) -> None:
                 text=True,
             )
             seen: set = set()
+            assert proc.stdout is not None  # stdout=PIPE guarantees a stream
             for line in proc.stdout:
                 m = re.search(r"> (\d+\.\d+\.\d+\.\d+)", line)
                 if m:
@@ -109,6 +112,7 @@ def monitor_traffic(mode: Optional[str], interface: str = WG_INTERFACE) -> None:
                 stderr=subprocess.DEVNULL,
                 text=True,
             )
+            assert proc.stdout is not None  # stdout=PIPE guarantees a stream
             for line in proc.stdout:
                 m = re.search(r"(\S+) > (\S+)", line)
                 if m:
@@ -137,6 +141,7 @@ def monitor_traffic(mode: Optional[str], interface: str = WG_INTERFACE) -> None:
                 stderr=subprocess.DEVNULL,
                 text=True,
             )
+            assert proc.stdout is not None  # stdout=PIPE guarantees a stream
             for line in proc.stdout:
                 print(f"{_RED}[LEAK?]{_RESET} {line.rstrip()}")
 
@@ -152,6 +157,7 @@ def monitor_traffic(mode: Optional[str], interface: str = WG_INTERFACE) -> None:
                 stderr=subprocess.DEVNULL,
                 text=True,
             )
+            assert proc.stdout is not None  # stdout=PIPE guarantees a stream
             for line in proc.stdout:
                 line = line.rstrip()
                 if re.search(r"\.(80:|80 >)", line):

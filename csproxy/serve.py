@@ -448,8 +448,8 @@ def _launch_server(
     script: str,
     script_name: str,
     banner_fn,
-    domain: str = None,
-    config: "Config" = None,
+    domain: Optional[str] = None,
+    config: Optional["Config"] = None,
     reconnect: bool = False,
 ) -> None:
     """
@@ -522,7 +522,11 @@ def _launch_server(
 
 
 def serve_file(
-    file_path: Path, port: int, gh: GitHubManager, config: Config = None, domain: str = None
+    file_path: Path,
+    port: int,
+    gh: GitHubManager,
+    config: Optional[Config] = None,
+    domain: Optional[str] = None,
 ) -> None:
     """
     Upload a single file to a Codespace and serve it via HTTP.
@@ -569,7 +573,11 @@ def serve_file(
 
 
 def serve_directory(
-    dir_path: Path, port: int, gh: GitHubManager, config: Config = None, domain: str = None
+    dir_path: Path,
+    port: int,
+    gh: GitHubManager,
+    config: Optional[Config] = None,
+    domain: Optional[str] = None,
 ) -> None:
     """
     Upload a directory to a Codespace and serve it via HTTP.
@@ -625,8 +633,8 @@ def serve_redirect(
     port: int,
     redirect_code: int,
     gh: GitHubManager,
-    config: Config = None,
-    domain: str = None,
+    config: Optional[Config] = None,
+    domain: Optional[str] = None,
 ) -> None:
     """
     Start an HTTP redirect server in a Codespace.
@@ -679,8 +687,8 @@ def serve_custom(
     content_type: str,
     status_code: int,
     gh: GitHubManager,
-    config: Config = None,
-    domain: str = None,
+    config: Optional[Config] = None,
+    domain: Optional[str] = None,
 ) -> None:
     """
     Start a custom HTTP response server in a Codespace.
@@ -729,7 +737,9 @@ def serve_custom(
     )
 
 
-def serve_capture(port: int, gh: GitHubManager, config: Config = None, domain: str = None) -> None:
+def serve_capture(
+    port: int, gh: GitHubManager, config: Optional[Config] = None, domain: Optional[str] = None
+) -> None:
     """
     Start a capture server that logs and saves all incoming POST data.
 
@@ -793,7 +803,7 @@ def serve_capture(port: int, gh: GitHubManager, config: Config = None, domain: s
     _download_captures(gh, cs_name)
 
 
-def stop_server(port: int, gh: GitHubManager, config: Config = None) -> None:
+def stop_server(port: int, gh: GitHubManager, config: Optional[Config] = None) -> None:
     """
     Stop server running on the specified port in the Codespace.
 
@@ -827,7 +837,7 @@ def stop_server(port: int, gh: GitHubManager, config: Config = None) -> None:
     logger.info("Server stopped")
 
 
-def clean_all(gh: GitHubManager, config: Config = None) -> None:
+def clean_all(gh: GitHubManager, config: Optional[Config] = None) -> None:
     """
     Kill all servers and port forwards on the Codespace.
 
@@ -873,7 +883,7 @@ def clean_all(gh: GitHubManager, config: Config = None) -> None:
     logger.info("Cleanup complete!")
 
 
-def list_files(gh: GitHubManager, config: Config = None) -> None:
+def list_files(gh: GitHubManager, config: Optional[Config] = None) -> None:
     """
     List files in /tmp/serve on the Codespace.
 

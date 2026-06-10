@@ -14,7 +14,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from .runner import CommandRunner
 from .state import State
@@ -112,7 +112,7 @@ class SSHTunnel:
 
         worker_cmd = [sys.executable, "-m", "csproxy._worker", str(self.spec_file)]
 
-        popen_kwargs = {}
+        popen_kwargs: dict[str, Any] = {}
         if sys.platform == "win32":
             popen_kwargs["creationflags"] = (
                 subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW

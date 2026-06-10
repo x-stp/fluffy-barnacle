@@ -35,13 +35,14 @@ def file_lock(path: Path, *, timeout: float = 5.0) -> Iterator[None]:
             ) from exc
 
     with open(path, "a+") as lock_file:
+        fd = lock_file.fileno()
         start = time.time()
         while True:
             try:
                 if os.name == "nt":  # pragma: no cover - Windows-only fallback
-                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
                 else:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except OSError:
                 if time.time() - start > timeout:
@@ -56,6 +57,6 @@ def file_lock(path: Path, *, timeout: float = 5.0) -> Iterator[None]:
         finally:
             if os.name == "nt":  # pragma: no cover - Windows-only fallback
                 lock_file.seek(0)
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
             else:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(fd, fcntl.LOCK_UN)

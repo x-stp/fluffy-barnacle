@@ -12,8 +12,7 @@ permissions:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    # black and flake8 are now blocking (the tree is clean). mypy stays
-    # advisory until its remaining type-annotation debt is burned down.
+    # black, flake8, and mypy are all blocking; the tree is clean for each.
     steps:
       - uses: actions/checkout@v6
 
@@ -34,7 +33,6 @@ jobs:
         run: flake8 csproxy tests
 
       - name: Type check (mypy)
-        continue-on-error: true
         run: mypy csproxy
 
   test:

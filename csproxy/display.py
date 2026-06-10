@@ -122,9 +122,11 @@ def _show_status_body(config: Config, gh) -> None:
             print("\nTunnels:")
             for i, name in enumerate(all_names):
                 port = config.socks_port + i
-                t = SSHTunnel(config, name, port=port, pid_suffix=("" if i == 0 else str(i + 1)))
-                healthy = t.health_check()
-                exit_ip = t.get_exit_ip() if healthy else "unreachable"
+                tunnel = SSHTunnel(
+                    config, name, port=port, pid_suffix=("" if i == 0 else str(i + 1))
+                )
+                healthy = tunnel.health_check()
+                exit_ip = tunnel.get_exit_ip() if healthy else "unreachable"
                 health_str = "HEALTHY" if healthy else "UNHEALTHY"
                 print(f"  :{port}  {health_str:<10}  {exit_ip or 'unknown':<16}  {name}")
         else:

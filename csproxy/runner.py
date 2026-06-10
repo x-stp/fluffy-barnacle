@@ -95,7 +95,9 @@ class CommandRunner:
         if self.dry_run:
             return subprocess.CompletedProcess(list(cmd), 0, stdout="", stderr="")
 
-        return subprocess.run(
+        # Thin passthrough: the untyped **kwargs and sentinel timeout prevent
+        # mypy from resolving a single subprocess.run overload.
+        result: subprocess.CompletedProcess = subprocess.run(  # type: ignore[call-overload]
             list(cmd),
             check=check,
             capture_output=capture_output,
@@ -105,6 +107,7 @@ class CommandRunner:
             input=input,
             **kwargs,
         )
+        return result
 
     def gh(self, args: Sequence[str], **kwargs) -> subprocess.CompletedProcess:
         """Run a GitHub CLI command."""

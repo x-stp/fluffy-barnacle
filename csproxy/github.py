@@ -42,7 +42,7 @@ class GitHubManager:
         else:
             self.config_dir = Path.home() / ".config" / "cs-proxy"
         self.token_file = self.config_dir / "gh_token"
-        self._token = None
+        self._token: Optional[str] = None
         self.account = account
         self.runner = runner or CommandRunner()
 
@@ -243,7 +243,8 @@ class GitHubManager:
         result = self.run_gh_command(
             ["codespace", "list", "--json", "name,state,repository,createdAt"]
         )
-        return json.loads(result.stdout)
+        codespaces: list[dict] = json.loads(result.stdout)
+        return codespaces
 
     def get_codespace(self, name: str) -> Optional[dict]:
         """
@@ -288,7 +289,7 @@ class GitHubManager:
 
         self.logger.info(f"Creating new Codespace (machine: {machine})...")
         result = self.run_gh_command(args)
-        codespace = json.loads(result.stdout)
+        codespace: dict = json.loads(result.stdout)
 
         self.logger.info(f"Created Codespace: {codespace['name']}")
         return codespace
