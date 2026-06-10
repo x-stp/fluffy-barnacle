@@ -9,7 +9,7 @@ Extracted from proxy.py for modularity.
 import time
 
 from .github import GitHubManager
-from .utils import Config, get_logger
+from .utils import Config, eprint, get_logger, prompt
 
 
 class CodespaceSelector:
@@ -56,15 +56,15 @@ class CodespaceSelector:
 
     def _create_interactively(self) -> str:
         """Prompt user for repo and create a new Codespace."""
-        print(f"\nEnter repository (owner/repo, or press Enter for {self.BLANK_REPO}):")
-        repo = input("> ").strip() or self.BLANK_REPO
+        eprint(f"\nEnter repository (owner/repo, or press Enter for {self.BLANK_REPO}):")
+        repo = prompt("> ").strip() or self.BLANK_REPO
 
         location = self.config.location
         if not location:
-            print("\nSelect region (or press Enter for no preference):")
+            eprint("\nSelect region (or press Enter for no preference):")
             for i, (value, label) in enumerate(self.LOCATIONS, 1):
-                print(f"  {i}) {value:<16} ({label})")
-            choice = input("> ").strip()
+                eprint(f"  {i}) {value:<16} ({label})")
+            choice = prompt("> ").strip()
             if choice.isdigit():
                 idx = int(choice) - 1
                 if 0 <= idx < len(self.LOCATIONS):
@@ -165,15 +165,15 @@ class CodespaceSelector:
     def _prompt_selection(self, codespaces: list) -> str:
         """Prompt user to select from multiple Codespaces."""
         self.logger.info("Available Codespaces:")
-        print()
+        eprint()
         for i, cs in enumerate(codespaces, 1):
             name = cs.get("name", "unknown")
             state = cs.get("state", "unknown")
             repo = cs.get("repository", "unknown")
-            print(f"  {i}) {name:<40} {state:<15} {repo}")
-        print()
+            eprint(f"  {i}) {name:<40} {state:<15} {repo}")
+        eprint()
 
-        selection = input("Enter number, name, or press Enter for most recent: ").strip()
+        selection = prompt("Enter number, name, or press Enter for most recent: ").strip()
 
         if not selection:
             sorted_cs = sorted(codespaces, key=lambda x: x.get("createdAt", ""), reverse=True)

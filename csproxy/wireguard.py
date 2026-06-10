@@ -14,7 +14,7 @@ import subprocess
 import time
 
 from .github import GitHubManager
-from .utils import Config, get_logger
+from .utils import Config, eprint, get_logger, prompt
 
 # Re-export from extracted modules for backward compatibility
 from .templates import WG_REMOTE_SETUP_SCRIPT as _REMOTE_SETUP_SCRIPT  # noqa: F401
@@ -211,16 +211,16 @@ def start_tunnel(config: Config, gh: GitHubManager) -> None:
         logger.info(f"SSH tunnel already running on port {TCP_RELAY_PORT}")
     else:
         logger.warning(f"SSH tunnel not running on port {TCP_RELAY_PORT}")
-        print()
-        print("The SSH tunnel must be started as your regular user (not root).")
-        print("Please run this in another terminal:")
-        print()
-        print(
+        eprint()
+        eprint("The SSH tunnel must be started as your regular user (not root).")
+        eprint("Please run this in another terminal:")
+        eprint()
+        eprint(
             f"  gh codespace ssh -c {shlex.quote(cs_name)} -- "
             f"-T -L 127.0.0.1:{TCP_RELAY_PORT}:127.0.0.1:{TCP_RELAY_PORT} -N &"
         )
-        print()
-        input("Then press Enter to continue...")
+        eprint()
+        prompt("Then press Enter to continue...")
 
         result = runner.run(["ss", "-tln"], capture_output=True, text=True)
         if f":{TCP_RELAY_PORT}" not in result.stdout:

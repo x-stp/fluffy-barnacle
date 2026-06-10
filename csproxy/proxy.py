@@ -19,7 +19,9 @@ from .utils import (
     Config,
     GitHubAuthError,
     check_dependencies,
+    eprint,
     get_logger,
+    prompt,
 )
 
 # Re-export classes from extracted modules for backward compatibility
@@ -91,7 +93,7 @@ def generate_ssh_key(config: Config) -> None:
 
     if key_file.exists():
         logger.warning(f"SSH key already exists at {key_file}")
-        answer = input("Regenerate? [y/N] ").strip().lower()
+        answer = prompt("Regenerate? [y/N] ").strip().lower()
         if answer != "y":
             return
 
@@ -139,9 +141,9 @@ def set_github_token(token: str, config: Config, gh: GitHubManager) -> None:
     logger = get_logger()
 
     if not token:
-        print("Enter your GitHub Personal Access Token:")
-        print("(Create one at https://github.com/settings/tokens/new with 'codespace' scope)")
-        token = input("> ").strip()
+        eprint("Enter your GitHub Personal Access Token:")
+        eprint("(Create one at https://github.com/settings/tokens/new with 'codespace' scope)")
+        token = prompt("> ").strip()
 
     if not token:
         raise ValueError("No token provided")
@@ -150,7 +152,7 @@ def set_github_token(token: str, config: Config, gh: GitHubManager) -> None:
         token.startswith("ghp_") or token.startswith("ghs_") or token.startswith("github_pat_")
     ):
         logger.warning("Token doesn't match expected format (ghp_*, ghs_*, or github_pat_*)")
-        answer = input("Continue anyway? [y/N] ").strip().lower()
+        answer = prompt("Continue anyway? [y/N] ").strip().lower()
         if answer != "y":
             raise ValueError("Aborted")
 
@@ -176,12 +178,12 @@ def setup_split_tunnel(config: Config) -> None:
     logger = get_logger()
     target_file = config.config_dir / "targets.txt"
 
-    print("Split tunneling routes specific targets through the proxy.")
-    print("Enter target domains/IPs (one per line, empty line to finish):\n")
+    eprint("Split tunneling routes specific targets through the proxy.")
+    eprint("Enter target domains/IPs (one per line, empty line to finish):\n")
 
     targets = []
     while True:
-        target = input("> ").strip()
+        target = prompt("> ").strip()
         if not target:
             break
         targets.append(target)
@@ -499,12 +501,12 @@ def _pick_codespace(args, config: Config, gh: GitHubManager) -> str:
         return arg  # treat as explicit name
 
     if len(names) > 1:
-        print("\nSelect Codespace:")
+        eprint("\nSelect Codespace:")
         for i, name in enumerate(names, 1):
             idx = names.index(name)
             role = f" [:{config.socks_port + idx}]"
-            print(f"  {i}) {name}{role}")
-        choice = input("> ").strip()
+            eprint(f"  {i}) {name}{role}")
+        choice = prompt("> ").strip()
         if choice.isdigit():
             idx = int(choice) - 1
             if 0 <= idx < len(names):
@@ -629,12 +631,12 @@ def cmd_down(args, config: Config, gh: GitHubManager) -> int:
 
     # Step 3: confirm deletion
     if len(all_names) > 1:
-        print(f"\nThis will PERMANENTLY delete {len(all_names)} managed codespaces:")
+        eprint(f"\nThis will PERMANENTLY delete {len(all_names)} managed codespaces:")
         for name in all_names:
-            print(f"  - {name}")
+            eprint(f"  - {name}")
     else:
-        print(f"\nThis will PERMANENTLY delete: {all_names[0]}")
-    confirm = input("Are you sure? [y/N] ").strip().lower()
+        eprint(f"\nThis will PERMANENTLY delete: {all_names[0]}")
+    confirm = prompt("Are you sure? [y/N] ").strip().lower()
     if confirm != "y":
         logger.info("Cancelled — codespaces were stopped but not deleted.")
         return 0
@@ -668,17 +670,17 @@ def cmd_delete(args, config: Config, gh: GitHubManager) -> int:
     names = [cs["name"] for cs in codespaces]
 
     if len(names) > 1:
-        print(f"\nYou have {len(names)} codespaces:")
+        eprint(f"\nYou have {len(names)} codespaces:")
         for i, name in enumerate(names, 1):
-            print(f"  {i}) {name}")
-        print()
-        print("Options:")
-        print("  a) Delete ALL")
+            eprint(f"  {i}) {name}")
+        eprint()
+        eprint("Options:")
+        eprint("  a) Delete ALL")
         for i, name in enumerate(names, 1):
-            print(f"  {i}) Delete only {name}")
-        print("  n) Cancel")
-        print()
-        choice = input("Choice: ").strip().lower()
+            eprint(f"  {i}) Delete only {name}")
+        eprint("  n) Cancel")
+        eprint()
+        choice = prompt("Choice: ").strip().lower()
 
         if choice == "a":
             to_delete = names
@@ -689,8 +691,8 @@ def cmd_delete(args, config: Config, gh: GitHubManager) -> int:
             return 0
     else:
         to_delete = names
-        print(f"\nThis will PERMANENTLY delete: {to_delete[0]}")
-        confirm = input("Are you sure? [y/N] ").strip().lower()
+        eprint(f"\nThis will PERMANENTLY delete: {to_delete[0]}")
+        confirm = prompt("Are you sure? [y/N] ").strip().lower()
         if confirm != "y":
             logger.info("Cancelled")
             return 0

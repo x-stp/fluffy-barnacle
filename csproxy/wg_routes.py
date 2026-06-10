@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 
 from .runner import CommandRunner
-from .utils import Config, get_logger
+from .utils import Config, get_logger, prompt
 from .wg_constants import WG_INTERFACE
 
 # GitHub/Azure IP ranges to bypass when routing all traffic through tunnel.
@@ -104,7 +104,7 @@ def route_all(config: Config, interface: str = WG_INTERFACE) -> None:
 
     logger.warning("This will route ALL traffic through the Codespace!")
     logger.warning("The SSH tunnel and local network will be preserved.")
-    confirm = input("Continue? [y/N] ").strip().lower()
+    confirm = prompt("Continue? [y/N] ").strip().lower()
     if confirm not in ("y", "yes"):
         return
 

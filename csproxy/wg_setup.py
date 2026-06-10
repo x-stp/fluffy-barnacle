@@ -16,7 +16,7 @@ from typing import Optional
 from .github import GitHubManager
 from .runner import CommandRunner
 from .templates import WG_REMOTE_SETUP_SCRIPT as _REMOTE_SETUP_SCRIPT
-from .utils import Config, get_logger
+from .utils import Config, eprint, get_logger, prompt
 from .wg_constants import (
     WG_INTERFACE as _WG_INTERFACE,
     WG_PORT as _WG_PORT,
@@ -151,15 +151,15 @@ def select_codespace(gh: GitHubManager, config: Config, sudo_user: Optional[str]
         logger.info(f"Auto-selected: {cs_name}")
     else:
         logger.info("Available Codespaces:")
-        print()
+        eprint()
         for i, cs in enumerate(cs_list, 1):
-            print(
+            eprint(
                 f"  {i:2}) {cs['name']:<40} "
                 f"{cs.get('state', '?'):<12} {cs.get('repository', '')}"
             )
-        print()
+        eprint()
 
-        selection = input("Enter number or name (Enter for most recent): ").strip()
+        selection = prompt("Enter number or name (Enter for most recent): ").strip()
 
         if not selection:
             cs_name = cs_list[0]["name"]

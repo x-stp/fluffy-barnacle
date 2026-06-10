@@ -24,9 +24,13 @@ from .errors import (
     SSHTunnelError,
     WireGuardError,
 )
+from .interaction import eprint, prompt
 from .logging import get_logger, log_debug, log_error, log_info, log_warn, setup_logger
 
 __all__ = [
+    # Interaction
+    "eprint",
+    "prompt",
     # Logging
     "setup_logger",
     "get_logger",
