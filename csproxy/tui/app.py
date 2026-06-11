@@ -298,7 +298,11 @@ class CsProxyTUI(App):
     # ------------------------------------------------------------------
 
     def _active_tab(self) -> str:
-        return self.query_one(TabbedContent).active
+        # Annotated locals keep these precise even when textual is unavailable
+        # to mypy (the lint job doesn't install the optional tui extra), where
+        # the widget attributes would otherwise be typed as Any.
+        active: str = self.query_one(TabbedContent).active
+        return active
 
     def _selected_tunnel(self) -> Optional[dict]:
         return self._row_item("#tunnels_table", self._tunnels)
@@ -308,7 +312,7 @@ class CsProxyTUI(App):
 
     def _row_item(self, table_id: str, items: list[dict]) -> Optional[dict]:
         table = self.query_one(table_id, DataTable)
-        row = table.cursor_row
+        row: int = table.cursor_row
         if items and 0 <= row < len(items):
             return items[row]
         return None
