@@ -31,12 +31,16 @@ from textual.widgets import (
 
 from ..github import GitHubManager
 from ..services import (
+    delete_chain,
     drain_tunnel,
     get_logs,
+    list_chains,
     list_codespaces_safe,
     list_pool,
     rotate_pool,
     run_diagnostics,
+    start_chain,
+    stop_chain,
     stop_tunnel,
 )
 from ..utils import Config
@@ -117,6 +121,7 @@ class CsProxyTUI(App):
         self._status_text = ""
         self._tunnels: list[dict] = []
         self._codespaces: list[dict] = []
+        self._chains: list[dict] = []
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -125,6 +130,8 @@ class CsProxyTUI(App):
                 yield DataTable(id="tunnels_table", zebra_stripes=True, cursor_type="row")
             with TabPane("Codespaces", id="tab-codespaces"):
                 yield DataTable(id="codespaces_table", zebra_stripes=True, cursor_type="row")
+            with TabPane("Chains", id="tab-chains"):
+                yield DataTable(id="chains_table", zebra_stripes=True, cursor_type="row")
             with TabPane("Diagnostics", id="tab-diagnostics"):
                 yield DataTable(id="diag_table", zebra_stripes=True)
             with TabPane("Logs", id="tab-logs"):
@@ -138,6 +145,9 @@ class CsProxyTUI(App):
         )
         self.query_one("#codespaces_table", DataTable).add_columns(
             "Name", "State", "Repository", "Created"
+        )
+        self.query_one("#chains_table", DataTable).add_columns(
+            "Name", "Status", "Hop 1", "Hop 2", "Local"
         )
         self.query_one("#diag_table", DataTable).add_columns("Result", "Check")
         self.refresh_data()
@@ -159,9 +169,11 @@ class CsProxyTUI(App):
         data: dict = {}
         try:
             data["tunnels"] = list_pool(self._config)
+            data["chains"] = list_chains(self._config)
             data["locked"] = False
         except TimeoutError:
             data["tunnels"] = []
+            data["chains"] = []
             data["locked"] = True
         data["codespaces"] = list_codespaces_safe(self._gh)
         data["checks"] = run_diagnostics(self._config, self._gh)
@@ -174,6 +186,8 @@ class CsProxyTUI(App):
         else:
             self._tunnels = data["tunnels"]
             self._fill_tunnels(data["tunnels"])
+            self._chains = data.get("chains", [])
+            self._fill_chains(self._chains)
         self._codespaces = data["codespaces"]
         self._fill_codespaces(data["codespaces"])
         self._fill_diagnostics(data["checks"])
@@ -183,6 +197,7 @@ class CsProxyTUI(App):
             self._set_status(
                 f"{len(data['tunnels'])} tunnel(s) · "
                 f"{len(data['codespaces'])} codespace(s) · "
+                f"{len(self._chains)} chain(s) · "
                 f"{failures} check failure(s)  —  s/x/d/o/Del to act, r refresh, q quit"
             )
 
@@ -215,17 +230,39 @@ class CsProxyTUI(App):
                 lambda: self._gh.stop_codespace(name),
                 f"Stopped codespace {name}",
             )
+        elif tab == "tab-chains":
+            ch = self._selected_chain()
+            if not ch:
+                self.notify("No chain selected", severity="warning")
+                return
+            name = ch["name"]
+            self._confirm(
+                f"Stop chain {name}?",
+                lambda: stop_chain(self._config, self._gh, name),
+                f"Stopped chain {name}",
+            )
 
     def action_start(self) -> None:
-        if self._active_tab() != "tab-codespaces":
-            self.notify("Select a codespace to start", severity="warning")
-            return
-        cs = self._selected_codespace()
-        if not cs:
-            self.notify("No codespace selected", severity="warning")
-            return
-        name = cs["name"]
-        self._perform(lambda: self._gh.start_codespace(name), f"Started codespace {name}")
+        tab = self._active_tab()
+        if tab == "tab-codespaces":
+            cs = self._selected_codespace()
+            if not cs:
+                self.notify("No codespace selected", severity="warning")
+                return
+            name = cs["name"]
+            self._perform(lambda: self._gh.start_codespace(name), f"Started codespace {name}")
+        elif tab == "tab-chains":
+            ch = self._selected_chain()
+            if not ch:
+                self.notify("No chain selected", severity="warning")
+                return
+            name = ch["name"]
+            self.notify(f"Starting chain {name}… this can take a minute")
+            self._perform(
+                lambda: start_chain(self._config, self._gh, name), f"Started chain {name}"
+            )
+        else:
+            self.notify("Select a codespace or chain to start", severity="warning")
 
     def action_drain(self) -> None:
         if self._active_tab() != "tab-tunnels":
@@ -239,19 +276,31 @@ class CsProxyTUI(App):
         self._perform(lambda: drain_tunnel(self._config, port), f"Draining tunnel :{port}")
 
     def action_delete(self) -> None:
-        if self._active_tab() != "tab-codespaces":
-            self.notify("Select a codespace to delete", severity="warning")
-            return
-        cs = self._selected_codespace()
-        if not cs:
-            self.notify("No codespace selected", severity="warning")
-            return
-        name = cs["name"]
-        self._confirm(
-            f"Delete codespace {name}? This cannot be undone.",
-            lambda: self._gh.delete_codespace(name, force=True),
-            f"Deleted codespace {name}",
-        )
+        tab = self._active_tab()
+        if tab == "tab-codespaces":
+            cs = self._selected_codespace()
+            if not cs:
+                self.notify("No codespace selected", severity="warning")
+                return
+            name = cs["name"]
+            self._confirm(
+                f"Delete codespace {name}? This cannot be undone.",
+                lambda: self._gh.delete_codespace(name, force=True),
+                f"Deleted codespace {name}",
+            )
+        elif tab == "tab-chains":
+            ch = self._selected_chain()
+            if not ch:
+                self.notify("No chain selected", severity="warning")
+                return
+            name = ch["name"]
+            self._confirm(
+                f"Delete chain definition {name}?",
+                lambda: delete_chain(self._config, name),
+                f"Deleted chain {name}",
+            )
+        else:
+            self.notify("Select a codespace or chain to delete", severity="warning")
 
     def action_rotate(self) -> None:
         self._rotate()
@@ -310,6 +359,9 @@ class CsProxyTUI(App):
     def _selected_codespace(self) -> Optional[dict]:
         return self._row_item("#codespaces_table", self._codespaces)
 
+    def _selected_chain(self) -> Optional[dict]:
+        return self._row_item("#chains_table", self._chains)
+
     def _row_item(self, table_id: str, items: list[dict]) -> Optional[dict]:
         table = self.query_one(table_id, DataTable)
         row: int = table.cursor_row
@@ -343,6 +395,23 @@ class CsProxyTUI(App):
                 str(cs.get("repository", "")),
                 str(cs.get("createdAt", ""))[:10],
             )
+
+    @staticmethod
+    def _format_hop(hop: dict) -> str:
+        """Render a hop as 'Region · account', or just 'Region' for the default PAT."""
+        location = hop.get("location") or "?"
+        account = hop.get("account")
+        return f"{location} · {account}" if account else location
+
+    def _fill_chains(self, chains: list[dict]) -> None:
+        table = self.query_one("#chains_table", DataTable)
+        table.clear()
+        for ch in chains:
+            hops = ch.get("hops", [])
+            hop1 = self._format_hop(hops[0]) if len(hops) > 0 else "—"
+            hop2 = self._format_hop(hops[1]) if len(hops) > 1 else "—"
+            local = f":{ch['local_port']}" if ch.get("local_port") else "—"
+            table.add_row(str(ch.get("name", "")), str(ch.get("status", "")), hop1, hop2, local)
 
     def _fill_diagnostics(self, checks) -> None:
         table = self.query_one("#diag_table", DataTable)

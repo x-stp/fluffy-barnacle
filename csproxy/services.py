@@ -19,6 +19,7 @@ import shutil
 import socket
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 from .github import GitHubManager
 from .state import State
@@ -210,3 +211,77 @@ def stop_all_tunnels(config: Config) -> None:
     for i in range(1, len(config.codespace_names)):
         SSHTunnel(config, "", port=config.socks_port + i, pid_suffix=str(i + 1)).stop()
     HTTPProxyManager(config).stop()
+
+
+# =============================================================================
+# Chains (two-hop Codespace chains). Combines defined chains (config["chains"])
+# with running chains (state, kind="chain") into one display model, and wraps
+# the chain start/stop/delete logic for the TUI.
+# =============================================================================
+
+
+def _chain_row(name: str, definition: dict, running: Optional[dict]) -> dict:
+    """Build one display row, preferring the definition's hops (which carry the
+    account each hop's PAT belongs to) and overlaying running status/port."""
+    # Defined hops carry account + location; fall back to the running entry's
+    # hops for a chain that is running without a stored definition.
+    hops = definition.get("hops") or (running.get("hops", []) if running else [])
+    return {
+        "name": name,
+        "status": running.get("status", "running") if running else "defined",
+        "local_port": running.get("local_port") if running else None,
+        "running": running is not None,
+        "hops": [
+            {"location": h.get("location", ""), "account": h.get("account", "")} for h in hops
+        ],
+    }
+
+
+def list_chains(config: Config) -> list[dict]:
+    """Return a combined view of defined and running two-hop chains."""
+    from .chains import _chains
+
+    state = State(config.config_dir)
+    running: dict[str, dict] = {}
+    for entry in state.get_tunnels(kind="chain"):
+        entry_name = entry.get("name")
+        if entry_name:
+            running[str(entry_name)] = entry
+    defined = _chains(config)
+
+    rows = [_chain_row(str(name), chain, running.get(str(name))) for name, chain in defined.items()]
+    # Surface any running chain that no longer has a stored definition.
+    rows += [_chain_row(name, {}, entry) for name, entry in running.items() if name not in defined]
+    return rows
+
+
+def start_chain(config: Config, gh: GitHubManager, name: str, port: Optional[int] = None) -> None:
+    """Start a defined chain. Slow (provisions/links two hops); raises on failure."""
+    from types import SimpleNamespace
+
+    from .chains import _cmd_chain_start
+
+    parsed = SimpleNamespace(name=name, port=port)
+    if _cmd_chain_start(parsed, config, gh) != 0:
+        raise RuntimeError(f"Failed to start chain {name}")
+
+
+def stop_chain(config: Config, gh: GitHubManager, name: str) -> None:
+    """Stop a running chain and clean up its remote relays."""
+    from types import SimpleNamespace
+
+    from .chains import _cmd_chain_stop
+
+    _cmd_chain_stop(SimpleNamespace(name=name), config, gh)
+
+
+def delete_chain(config: Config, name: str) -> None:
+    """Remove a chain definition from config. Raises if it does not exist."""
+    from .chains import _chains
+
+    chains = _chains(config)
+    if name not in chains:
+        raise ValueError(f"Unknown chain: {name}")
+    del chains[name]
+    config.set("chains", chains)
+    config.save()

@@ -10,6 +10,7 @@ from csproxy.services import (
     _pid_suffix_for_port,
     drain_tunnel,
     get_logs,
+    list_chains,
     list_codespaces_safe,
     list_pool,
     rotate_pool,
@@ -173,3 +174,93 @@ def test_stop_all_tunnels_stops_each_and_http():
     # primary tunnel + one extra pool tunnel (index 1)
     assert mock_stop.call_count == 2
     mock_http.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Chains
+# ---------------------------------------------------------------------------
+
+
+def test_list_chains_includes_account_per_hop():
+    config = _config()
+    config.set(
+        "chains",
+        {
+            "eu-us": {
+                "name": "eu-us",
+                "hops": [
+                    {"location": "WestEurope", "account": "work", "codespace_name": ""},
+                    {"location": "EastUs", "codespace_name": ""},
+                ],
+            }
+        },
+    )
+    rows = list_chains(config)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["name"] == "eu-us"
+    assert row["status"] == "defined"
+    assert row["running"] is False
+    assert row["hops"][0] == {"location": "WestEurope", "account": "work"}
+    assert row["hops"][1] == {"location": "EastUs", "account": ""}
+
+
+def test_list_chains_overlays_running_status():
+    config = _config()
+    config.set("chains", {"eu-us": {"name": "eu-us", "hops": []}})
+    State(config.config_dir).add_tunnel(
+        id="chain-eu-us",
+        kind="chain",
+        name="eu-us",
+        status="healthy",
+        local_port=1090,
+        hops=[],
+    )
+    row = next(r for r in list_chains(config) if r["name"] == "eu-us")
+    assert row["running"] is True
+    assert row["status"] == "healthy"
+    assert row["local_port"] == 1090
+
+
+def test_start_chain_invokes_command(monkeypatch):
+    config = _config()
+    gh = GitHubManager(config_dir=config.config_dir)
+    calls = {}
+
+    def fake_start(parsed, cfg, ghm):
+        calls["name"] = parsed.name
+        calls["port"] = parsed.port
+        return 0
+
+    monkeypatch.setattr("csproxy.chains._cmd_chain_start", fake_start)
+    from csproxy.services import start_chain
+
+    start_chain(config, gh, "eu-us", port=1091)
+    assert calls == {"name": "eu-us", "port": 1091}
+
+
+def test_start_chain_raises_on_failure(monkeypatch):
+    config = _config()
+    gh = GitHubManager(config_dir=config.config_dir)
+    monkeypatch.setattr("csproxy.chains._cmd_chain_start", lambda parsed, cfg, ghm: 1)
+    from csproxy.services import start_chain
+
+    with pytest.raises(RuntimeError):
+        start_chain(config, gh, "eu-us")
+
+
+def test_delete_chain_removes_definition():
+    config = _config()
+    config.set("chains", {"eu-us": {"name": "eu-us", "hops": []}})
+    from csproxy.services import delete_chain
+
+    delete_chain(config, "eu-us")
+    assert "eu-us" not in config.get("chains", {})
+
+
+def test_delete_chain_missing_raises():
+    config = _config()
+    from csproxy.services import delete_chain
+
+    with pytest.raises(ValueError):
+        delete_chain(config, "nope")

@@ -41,6 +41,7 @@ def test_tui_mounts_with_expected_columns():
 
             assert len(app.query_one("#tunnels_table", DataTable).columns) == 5
             assert len(app.query_one("#codespaces_table", DataTable).columns) == 4
+            assert len(app.query_one("#chains_table", DataTable).columns) == 5
             assert len(app.query_one("#diag_table", DataTable).columns) == 2
 
     asyncio.run(scenario())
@@ -181,5 +182,78 @@ def test_tui_stop_confirm_invokes_service():
                 await app.workers.wait_for_complete()
                 await pilot.pause()
             mock_stop.assert_called_once()
+
+    asyncio.run(scenario())
+
+
+def _chain_row(name="eu-us", status="defined", local_port=None):
+    return {
+        "name": name,
+        "status": status,
+        "local_port": local_port,
+        "running": local_port is not None,
+        "hops": [
+            {"location": "WestEurope", "account": "work"},
+            {"location": "EastUs", "account": ""},
+        ],
+    }
+
+
+def test_tui_chains_tab_renders_account_per_hop():
+    async def scenario():
+        from textual.widgets import DataTable
+
+        app = _app()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._apply(
+                {
+                    "locked": False,
+                    "tunnels": [],
+                    "chains": [_chain_row()],
+                    "codespaces": [],
+                    "checks": [],
+                    "logs": [],
+                }
+            )
+            await pilot.pause()
+            table = app.query_one("#chains_table", DataTable)
+            assert table.row_count == 1
+            # Hop 1 carries the account; Hop 2 (default PAT) shows region only.
+            row = table.get_row_at(0)
+            assert row[2] == "WestEurope · work"
+            assert row[3] == "EastUs"
+
+    asyncio.run(scenario())
+
+
+def test_tui_chain_delete_confirm_invokes_service():
+    async def scenario():
+        from textual.widgets import TabbedContent
+
+        app = _app()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._apply(
+                {
+                    "locked": False,
+                    "tunnels": [],
+                    "chains": [_chain_row()],
+                    "codespaces": [],
+                    "checks": [],
+                    "logs": [],
+                }
+            )
+            app.query_one(TabbedContent).active = "tab-chains"
+            await pilot.pause()
+
+            with patch("csproxy.tui.app.delete_chain") as mock_delete:
+                await pilot.press("delete")  # delete chain definition -> confirm
+                await pilot.pause()
+                assert isinstance(app.screen, ConfirmScreen)
+                app.screen.dismiss(True)
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+            mock_delete.assert_called_once()
 
     asyncio.run(scenario())

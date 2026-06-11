@@ -100,12 +100,16 @@ confirmation first):
 | Key | Action |
 |-----|--------|
 | `r` | Refresh now |
-| `s` | Start the selected codespace |
-| `x` | Stop the selected tunnel / codespace (confirm) |
+| `s` | Start the selected codespace / chain |
+| `x` | Stop the selected tunnel / codespace / chain (confirm) |
 | `d` | Drain the selected tunnel |
 | `o` | Show a healthy tunnel port (rotate) |
-| `Del` | Delete the selected codespace (confirm) |
+| `Del` | Delete the selected codespace / chain definition (confirm) |
 | `q` | Quit |
+
+The **Chains** tab lists defined and running two-hop chains; each hop shows its
+region and, when bound to a named account, the account that PAT belongs to
+(e.g. `WestEurope · work`) so multi-account setups are clear at a glance.
 
 **Adding a second proxy:**
 
