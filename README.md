@@ -84,15 +84,28 @@ cs-tui                      # interactive terminal dashboard (or: cs-proxy tui)
 
 ### Terminal UI (cs-tui)
 
-A live terminal dashboard for monitoring tunnels, codespaces, diagnostics, and
-logs at a glance — built on [Textual](https://textual.textualize.io/). It reads
-the same state the CLI does and auto-refreshes; press `r` to refresh now, `q` to
-quit.
+A live terminal dashboard for monitoring **and managing** tunnels, codespaces,
+diagnostics, and logs — built on [Textual](https://textual.textualize.io/). It
+reads the same state and drives the same service layer as the CLI, and
+auto-refreshes.
 
 ```bash
 pip install 'fluffy-barnacle[tui]'   # one-time: install the optional TUI extra
 cs-tui                               # launch the dashboard
 ```
+
+Actions operate on the selected row of the active tab (destructive ones ask for
+confirmation first):
+
+| Key | Action |
+|-----|--------|
+| `r` | Refresh now |
+| `s` | Start the selected codespace |
+| `x` | Stop the selected tunnel / codespace (confirm) |
+| `d` | Drain the selected tunnel |
+| `o` | Show a healthy tunnel port (rotate) |
+| `Del` | Delete the selected codespace (confirm) |
+| `q` | Quit |
 
 **Adding a second proxy:**
 

@@ -1,6 +1,7 @@
 """Smoke tests for the Textual TUI (skipped when the 'tui' extra is absent)."""
 
 import asyncio
+from unittest.mock import patch
 
 import pytest
 
@@ -8,8 +9,19 @@ pytest.importorskip("textual")
 
 from csproxy.github import GitHubManager  # noqa: E402
 from csproxy.services import Check  # noqa: E402
-from csproxy.tui.app import CsProxyTUI  # noqa: E402
+from csproxy.state import State  # noqa: E402
+from csproxy.tui.app import ConfirmScreen, CsProxyTUI  # noqa: E402
 from csproxy.utils import Config  # noqa: E402
+
+
+def _tunnel_row(port=1080, status="healthy"):
+    return {
+        "port": port,
+        "status": status,
+        "codespace_name": "demo",
+        "pid": 4242,
+        "failures": 0,
+    }
 
 
 def _app():
@@ -82,5 +94,92 @@ def test_tui_handles_locked_state():
             )
             await pilot.pause()
             assert "locked" in app._status_text.lower()
+
+    asyncio.run(scenario())
+
+
+def test_tui_drain_action_updates_state():
+    async def scenario():
+        import os
+
+        config = Config()
+        config.ensure_dirs()
+        # Use a live PID so the periodic reconcile doesn't flip the tunnel to
+        # "crashed" before/after the drain action.
+        State(config.config_dir).add_tunnel(
+            id="ssh-1080",
+            kind="ssh",
+            codespace_name="demo",
+            port=1080,
+            pid=os.getpid(),
+            status="healthy",
+            failures=0,
+        )
+        gh = GitHubManager(config_dir=config.config_dir)
+        app = CsProxyTUI(config, gh, interval=3600)
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert app._tunnels and app._tunnels[0]["port"] == 1080
+
+            await pilot.press("d")  # drain selected tunnel (no confirmation)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert State(config.config_dir).get_tunnel_by_port(1080)["status"] == "draining"
+
+    asyncio.run(scenario())
+
+
+def test_tui_stop_shows_then_cancels_confirm():
+    async def scenario():
+        app = _app()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._apply(
+                {
+                    "locked": False,
+                    "tunnels": [_tunnel_row()],
+                    "codespaces": [],
+                    "checks": [],
+                    "logs": [],
+                }
+            )
+            await pilot.pause()
+
+            await pilot.press("x")  # stop selected tunnel -> confirmation modal
+            await pilot.pause()
+            assert isinstance(app.screen, ConfirmScreen)
+
+            await pilot.press("escape")  # cancel
+            await pilot.pause()
+            assert not isinstance(app.screen, ConfirmScreen)
+
+    asyncio.run(scenario())
+
+
+def test_tui_stop_confirm_invokes_service():
+    async def scenario():
+        app = _app()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._apply(
+                {
+                    "locked": False,
+                    "tunnels": [_tunnel_row()],
+                    "codespaces": [],
+                    "checks": [],
+                    "logs": [],
+                }
+            )
+            await pilot.pause()
+
+            with patch("csproxy.tui.app.stop_tunnel") as mock_stop:
+                await pilot.press("x")
+                await pilot.pause()
+                app.screen.dismiss(True)  # confirm "yes"
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+            mock_stop.assert_called_once()
 
     asyncio.run(scenario())

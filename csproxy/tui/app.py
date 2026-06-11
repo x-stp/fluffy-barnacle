@@ -1,21 +1,28 @@
 #!/usr/bin/env python3
 """
-Textual app for csproxy — Phase 0: a read-only live monitor.
+Textual app for csproxy — a live monitor with actions.
 
 Renders the same structured data the CLI uses (via csproxy.services), refreshing
-on a timer. All blocking work (gh/ssh/curl subprocess calls inside the service
-functions) runs in a threaded worker so the UI never freezes. Actions
-(start/stop/rotate) are intentionally out of scope for this phase.
+on a timer, and drives the same service layer for mutating actions (stop/drain/
+rotate tunnels; start/stop/delete codespaces). All blocking work (gh/ssh/curl
+subprocess calls) runs in threaded workers so the UI never freezes, and
+destructive actions are gated behind a confirmation modal.
 """
 
 from __future__ import annotations
 
+from typing import Callable, Optional
+
 from textual import work
 from textual.app import App, ComposeResult
+from textual.containers import Grid
+from textual.screen import ModalScreen
 from textual.widgets import (
+    Button,
     DataTable,
     Footer,
     Header,
+    Label,
     Log,
     Static,
     TabbedContent,
@@ -23,12 +30,60 @@ from textual.widgets import (
 )
 
 from ..github import GitHubManager
-from ..services import get_logs, list_codespaces_safe, list_pool, run_diagnostics
+from ..services import (
+    drain_tunnel,
+    get_logs,
+    list_codespaces_safe,
+    list_pool,
+    rotate_pool,
+    run_diagnostics,
+    stop_tunnel,
+)
 from ..utils import Config
 
 
+class ConfirmScreen(ModalScreen[bool]):
+    """A small yes/no modal used to gate destructive actions."""
+
+    CSS = """
+    ConfirmScreen { align: center middle; }
+    #dialog {
+        grid-size: 2;
+        grid-gutter: 1 2;
+        grid-rows: 1fr 3;
+        padding: 1 2;
+        width: 60;
+        height: 11;
+        border: thick $background 80%;
+        background: $surface;
+    }
+    #question { column-span: 2; height: 1fr; content-align: center middle; }
+    Button { width: 100%; }
+    """
+
+    BINDINGS = [("escape", "dismiss_no", "Cancel")]
+
+    def __init__(self, question: str) -> None:
+        super().__init__()
+        self._question = question
+
+    def compose(self) -> ComposeResult:
+        yield Grid(
+            Label(self._question, id="question"),
+            Button("Yes", variant="error", id="yes"),
+            Button("No", variant="primary", id="no"),
+            id="dialog",
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "yes")
+
+    def action_dismiss_no(self) -> None:
+        self.dismiss(False)
+
+
 class CsProxyTUI(App):
-    """Read-only monitor for tunnels, codespaces, diagnostics, and logs."""
+    """Live monitor + actions for tunnels, codespaces, diagnostics, and logs."""
 
     TITLE = "cs-proxy"
     SUB_TITLE = "Codespaces proxy monitor"
@@ -40,8 +95,13 @@ class CsProxyTUI(App):
     """
 
     BINDINGS = [
+        ("r", "refresh", "Refresh"),
+        ("s", "start", "Start"),
+        ("x", "stop", "Stop"),
+        ("d", "drain", "Drain"),
+        ("o", "rotate", "Rotate"),
+        ("delete", "delete", "Delete"),
         ("q", "quit", "Quit"),
-        ("r", "refresh", "Refresh now"),
     ]
 
     def __init__(
@@ -55,14 +115,16 @@ class CsProxyTUI(App):
         self._gh = gh
         self._interval = interval
         self._status_text = ""
+        self._tunnels: list[dict] = []
+        self._codespaces: list[dict] = []
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with TabbedContent(initial="tab-tunnels"):
             with TabPane("Tunnels", id="tab-tunnels"):
-                yield DataTable(id="tunnels_table", zebra_stripes=True)
+                yield DataTable(id="tunnels_table", zebra_stripes=True, cursor_type="row")
             with TabPane("Codespaces", id="tab-codespaces"):
-                yield DataTable(id="codespaces_table", zebra_stripes=True)
+                yield DataTable(id="codespaces_table", zebra_stripes=True, cursor_type="row")
             with TabPane("Diagnostics", id="tab-diagnostics"):
                 yield DataTable(id="diag_table", zebra_stripes=True)
             with TabPane("Logs", id="tab-logs"):
@@ -110,7 +172,9 @@ class CsProxyTUI(App):
         if data["locked"]:
             self._set_status("State file locked by another process — retrying…")
         else:
+            self._tunnels = data["tunnels"]
             self._fill_tunnels(data["tunnels"])
+        self._codespaces = data["codespaces"]
         self._fill_codespaces(data["codespaces"])
         self._fill_diagnostics(data["checks"])
         self._fill_logs(data["logs"])
@@ -119,8 +183,135 @@ class CsProxyTUI(App):
             self._set_status(
                 f"{len(data['tunnels'])} tunnel(s) · "
                 f"{len(data['codespaces'])} codespace(s) · "
-                f"{failures} check failure(s)  —  press r to refresh, q to quit"
+                f"{failures} check failure(s)  —  s/x/d/o/Del to act, r refresh, q quit"
             )
+
+    # ------------------------------------------------------------------
+    # Actions (key bindings). Each acts on the selected row of the active
+    # tab; destructive ones go through a confirmation modal first.
+    # ------------------------------------------------------------------
+
+    def action_stop(self) -> None:
+        tab = self._active_tab()
+        if tab == "tab-tunnels":
+            t = self._selected_tunnel()
+            if not t:
+                self.notify("No tunnel selected", severity="warning")
+                return
+            port = t["port"]
+            self._confirm(
+                f"Stop tunnel :{port}?",
+                lambda: stop_tunnel(self._config, port),
+                f"Stopped tunnel :{port}",
+            )
+        elif tab == "tab-codespaces":
+            cs = self._selected_codespace()
+            if not cs:
+                self.notify("No codespace selected", severity="warning")
+                return
+            name = cs["name"]
+            self._confirm(
+                f"Stop codespace {name}?",
+                lambda: self._gh.stop_codespace(name),
+                f"Stopped codespace {name}",
+            )
+
+    def action_start(self) -> None:
+        if self._active_tab() != "tab-codespaces":
+            self.notify("Select a codespace to start", severity="warning")
+            return
+        cs = self._selected_codespace()
+        if not cs:
+            self.notify("No codespace selected", severity="warning")
+            return
+        name = cs["name"]
+        self._perform(lambda: self._gh.start_codespace(name), f"Started codespace {name}")
+
+    def action_drain(self) -> None:
+        if self._active_tab() != "tab-tunnels":
+            self.notify("Select a tunnel to drain", severity="warning")
+            return
+        t = self._selected_tunnel()
+        if not t:
+            self.notify("No tunnel selected", severity="warning")
+            return
+        port = t["port"]
+        self._perform(lambda: drain_tunnel(self._config, port), f"Draining tunnel :{port}")
+
+    def action_delete(self) -> None:
+        if self._active_tab() != "tab-codespaces":
+            self.notify("Select a codespace to delete", severity="warning")
+            return
+        cs = self._selected_codespace()
+        if not cs:
+            self.notify("No codespace selected", severity="warning")
+            return
+        name = cs["name"]
+        self._confirm(
+            f"Delete codespace {name}? This cannot be undone.",
+            lambda: self._gh.delete_codespace(name, force=True),
+            f"Deleted codespace {name}",
+        )
+
+    def action_rotate(self) -> None:
+        self._rotate()
+
+    @work(thread=True, group="action")
+    def _rotate(self) -> None:
+        try:
+            port = rotate_pool(self._config)
+            self.call_from_thread(self.notify, f"Healthy tunnel: :{port}")
+        except Exception as e:  # surfaced to the user, not swallowed
+            self.call_from_thread(self.notify, f"Rotate failed: {e}", severity="error")
+
+    # ------------------------------------------------------------------
+    # Action plumbing.
+    # ------------------------------------------------------------------
+
+    def _confirm(self, question: str, fn: Callable[[], None], success: str) -> None:
+        def on_result(confirmed: Optional[bool]) -> None:
+            if confirmed:
+                self._perform(fn, success)
+
+        self.push_screen(ConfirmScreen(question), on_result)
+
+    def _perform(self, fn: Callable[[], None], success: str) -> None:
+        self._run_action(fn, success)
+
+    @work(thread=True, group="action")
+    def _run_action(self, fn: Callable[[], None], success: str) -> None:
+        try:
+            fn()
+            self.call_from_thread(self._action_done, success, None)
+        except Exception as e:  # surfaced to the user, not swallowed
+            self.call_from_thread(self._action_done, success, e)
+
+    def _action_done(self, success: str, error: Optional[Exception]) -> None:
+        if error is not None:
+            self.notify(f"Failed: {error}", severity="error")
+        else:
+            self.notify(success)
+        self.refresh_data()
+
+    # ------------------------------------------------------------------
+    # Selection helpers.
+    # ------------------------------------------------------------------
+
+    def _active_tab(self) -> str:
+        return self.query_one(TabbedContent).active
+
+    def _selected_tunnel(self) -> Optional[dict]:
+        return self._row_item("#tunnels_table", self._tunnels)
+
+    def _selected_codespace(self) -> Optional[dict]:
+        return self._row_item("#codespaces_table", self._codespaces)
+
+    def _row_item(self, table_id: str, items: list[dict]) -> Optional[dict]:
+        table = self.query_one(table_id, DataTable)
+        row = table.cursor_row
+        if items and 0 <= row < len(items):
+            return items[row]
+        return None
 
     # ------------------------------------------------------------------
     # Table/log fillers (UI thread only).

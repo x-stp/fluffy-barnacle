@@ -160,3 +160,53 @@ def get_logs(config: Config, lines: int = 50) -> list[str]:
         return []
     log_lines = log_file.read_text().splitlines()
     return log_lines[-lines:] if len(log_lines) > lines else log_lines
+
+
+# =============================================================================
+# Actions (mutating; presentation-free, raise on error). These back the TUI's
+# key bindings and mirror the logic inside the cmd_* pool/stop commands.
+# =============================================================================
+
+
+def _pid_suffix_for_port(config: Config, port: int) -> str:
+    """Derive a tunnel's pid-file suffix from its port (matches cmd_start/stop)."""
+    index = port - config.socks_port
+    return "" if index <= 0 else str(index + 1)
+
+
+def stop_tunnel(config: Config, port: int) -> None:
+    """Stop the SSH tunnel bound to `port` and remove it from the pool."""
+    from .tunnel import SSHTunnel
+
+    suffix = _pid_suffix_for_port(config, port)
+    SSHTunnel(config, "", port=port, pid_suffix=suffix).stop()
+
+
+def drain_tunnel(config: Config, port: int) -> None:
+    """Mark the tunnel on `port` as draining. Raises if no such tunnel exists."""
+    state = State(config.config_dir)
+    if not state.get_tunnel_by_port(port):
+        raise ValueError(f"No tunnel on port {port}")
+    state.update_tunnel(port, status="draining")
+
+
+def rotate_pool(config: Config) -> int:
+    """Return a random healthy tunnel port. Raises if none are healthy."""
+    import random
+
+    state = State(config.config_dir)
+    healthy = state.get_tunnels(kind="ssh", status="healthy")
+    if not healthy:
+        raise RuntimeError("No healthy tunnels available")
+    port: int = random.choice(healthy)["port"]
+    return port
+
+
+def stop_all_tunnels(config: Config) -> None:
+    """Stop the primary tunnel, any pool tunnels, and the HTTP proxy."""
+    from .tunnel import HTTPProxyManager, SSHTunnel
+
+    SSHTunnel(config, config.codespace_name or "").stop()
+    for i in range(1, len(config.codespace_names)):
+        SSHTunnel(config, "", port=config.socks_port + i, pid_suffix=str(i + 1)).stop()
+    HTTPProxyManager(config).stop()

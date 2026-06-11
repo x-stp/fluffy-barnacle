@@ -1,12 +1,21 @@
 """Tests for the presentation-free service layer (csproxy.services)."""
 
+from unittest.mock import patch
+
+import pytest
+
 from csproxy.github import GitHubManager
 from csproxy.services import (
     Check,
+    _pid_suffix_for_port,
+    drain_tunnel,
     get_logs,
     list_codespaces_safe,
     list_pool,
+    rotate_pool,
     run_diagnostics,
+    stop_all_tunnels,
+    stop_tunnel,
 )
 from csproxy.state import State
 from csproxy.utils import Config
@@ -93,3 +102,74 @@ def test_get_logs_returns_tail():
     tail = get_logs(config, lines=10)
     assert len(tail) == 10
     assert tail[-1] == "line 99"
+
+
+# ---------------------------------------------------------------------------
+# Actions
+# ---------------------------------------------------------------------------
+
+
+def _add_tunnel(config, port=1080, status="healthy"):
+    State(config.config_dir).add_tunnel(
+        id=f"ssh-{port}",
+        kind="ssh",
+        codespace_name="demo",
+        port=port,
+        pid=999999,
+        status=status,
+        failures=0,
+    )
+
+
+def test_pid_suffix_for_port():
+    config = _config()  # default socks_port is 1080
+    base = config.socks_port
+    assert _pid_suffix_for_port(config, base) == ""
+    assert _pid_suffix_for_port(config, base + 1) == "2"
+    assert _pid_suffix_for_port(config, base + 2) == "3"
+
+
+def test_drain_tunnel_marks_draining():
+    config = _config()
+    _add_tunnel(config, port=1080)
+    drain_tunnel(config, 1080)
+    assert State(config.config_dir).get_tunnel_by_port(1080)["status"] == "draining"
+
+
+def test_drain_tunnel_missing_raises():
+    config = _config()
+    with pytest.raises(ValueError):
+        drain_tunnel(config, 9999)
+
+
+def test_rotate_pool_returns_healthy_port():
+    config = _config()
+    _add_tunnel(config, port=1080, status="healthy")
+    assert rotate_pool(config) == 1080
+
+
+def test_rotate_pool_no_healthy_raises():
+    config = _config()
+    _add_tunnel(config, port=1080, status="crashed")
+    with pytest.raises(RuntimeError):
+        rotate_pool(config)
+
+
+def test_stop_tunnel_invokes_sshtunnel_stop():
+    config = _config()
+    with patch("csproxy.tunnel.SSHTunnel.stop") as mock_stop:
+        stop_tunnel(config, config.socks_port)
+    mock_stop.assert_called_once()
+
+
+def test_stop_all_tunnels_stops_each_and_http():
+    config = _config()
+    config.set("codespace_names", ["a", "b"])
+    with (
+        patch("csproxy.tunnel.SSHTunnel.stop") as mock_stop,
+        patch("csproxy.tunnel.HTTPProxyManager.stop") as mock_http,
+    ):
+        stop_all_tunnels(config)
+    # primary tunnel + one extra pool tunnel (index 1)
+    assert mock_stop.call_count == 2
+    mock_http.assert_called_once()
