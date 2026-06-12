@@ -20,11 +20,13 @@ Fluffy-Barnacle is an operator-focused toolkit that turns GitHub Codespaces into
 | **[cs-serve](user-guide/command-reference/cs-serve.md)** | Instant public HTTPS file hosting, redirect servers, custom HTTP responses, and data capture via `*.app.github.dev` |
 | **[cs-wg](user-guide/command-reference/cs-wg.md)** | Full WireGuard VPN tunnel with route management and traffic monitoring |
 | **[cs-tools](user-guide/command-reference/cs-tools.md)** | Drop-in wrappers for nmap, ffuf, httpx, nuclei, sqlmap with automatic SOCKS5 proxy arguments and smart tunnel rotation |
+| **[cs-tui](user-guide/command-reference/cs-tui.md)** | Interactive terminal dashboard to monitor and manage tunnels, codespaces, and chains (optional `[tui]` extra) |
 
 Each tool can be used from the CLI or imported directly as a [Python library](development/python-api.md).
 
 ## What's New
 
+- **Interactive TUI** — `cs-tui` is a live dashboard to monitor and manage tunnels, codespaces, and chains: rotate/drain/stop tunnels, and create/start/stop/delete codespaces, all from one screen
 - **Smart tunnel rotation** — `cs-tools` automatically distributes traffic across healthy tunnels
 - **`cs-proxy check`** — One-command diagnostics for setup, auth, ports, and state health
 - **`cs-proxy doctor --fix`** — Safe local repair for config, proxychains output, and stale tunnel state

@@ -37,7 +37,7 @@ csproxy/
 
 ## Entry Points
 
-Four CLI tools are defined in `pyproject.toml`:
+Five CLI tools are defined in `pyproject.toml`:
 
 | Entry Point | Function | Module |
 |-------------|----------|--------|
@@ -45,6 +45,9 @@ Four CLI tools are defined in `pyproject.toml`:
 | `cs-serve` | `main_serve()` | `csproxy.cli` |
 | `cs-wg` | `main_wg()` | `csproxy.cli` |
 | `cs-tools` | `main_tools()` | `csproxy.tools` |
+| `cs-tui` | `main_tui()` | `csproxy.tui` |
+
+`cs-tui` is an optional extra (`pip install 'fluffy-barnacle[tui]'`); it renders the same structured data the CLI uses (via `csproxy.services`) and drives the same service-layer actions, so the dashboard and the CLI stay in lockstep.
 
 Each entry point in `cli.py` parses arguments, initializes `Config` and `GitHubManager`, then dispatches to a `COMMANDS` dict in the corresponding module (e.g., `proxy.COMMANDS`, `serve.COMMANDS`).
 
