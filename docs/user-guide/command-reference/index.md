@@ -1,6 +1,6 @@
 # Command Reference
 
-cs-proxy provides four CLI tools, each with its own set of commands.
+cs-proxy provides five commands, each with its own set of subcommands.
 
 ## Tools Overview
 
@@ -10,6 +10,7 @@ cs-proxy provides four CLI tools, each with its own set of commands.
 | [cs-serve](cs-serve.md) | `cs-serve <command>` | Public file hosting and HTTP servers |
 | [cs-wg](cs-wg.md) | `sudo cs-wg <command>` | WireGuard VPN tunnel management |
 | [cs-tools](cs-tools.md) | `cs-tools <tool> [args]` | Proxied security tool wrappers with smart tunnel rotation |
+| [cs-tui](cs-tui.md) | `cs-tui` | Interactive terminal dashboard to monitor and manage tunnels, codespaces, and chains |
 
 ## Global Options
 

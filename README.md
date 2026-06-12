@@ -89,10 +89,16 @@ diagnostics, and logs — built on [Textual](https://textual.textualize.io/). It
 reads the same state and drives the same service layer as the CLI, and
 auto-refreshes.
 
+![cs-tui dashboard](docs/assets/cs-tui-tunnels.svg)
+
 ```bash
 pip install 'fluffy-barnacle[tui]'   # one-time: install the optional TUI extra
 cs-tui                               # launch the dashboard
 ```
+
+The tabs — **Tunnels**, **Codespaces**, **Chains**, **Diagnostics**, **Logs** —
+each carry their own selectable rows. All blocking work runs in a background
+worker, so the UI never freezes while a `gh`/`ssh` call is in flight.
 
 Actions operate on the selected row of the active tab (destructive ones ask for
 confirmation first):
@@ -107,6 +113,13 @@ confirmation first):
 | `o` | Show a healthy tunnel port (rotate) |
 | `Del` | Delete the selected codespace / chain definition (confirm) |
 | `q` | Quit |
+
+On the **Codespaces** tab, `c` opens an input modal to create a new codespace.
+It is prefilled with `github/codespaces-blank` (override the default via the
+`codespace_repo` config key); type any `owner/repo` and press Enter to provision
+it in the background.
+
+![cs-tui create codespace](docs/assets/cs-tui-create.svg)
 
 The **Chains** tab lists defined and running two-hop chains; each hop shows its
 region and, when bound to a named account, the account that PAT belongs to

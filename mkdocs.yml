@@ -68,6 +68,7 @@ nav:
       - cs-serve: user-guide/command-reference/cs-serve.md
       - cs-wg: user-guide/command-reference/cs-wg.md
       - cs-tools: user-guide/command-reference/cs-tools.md
+      - cs-tui: user-guide/command-reference/cs-tui.md
   - Use Cases:
     - Overview: use-cases/index.md
     - Proxy Rotation: use-cases/proxy-rotation.md

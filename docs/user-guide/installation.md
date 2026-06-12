@@ -42,6 +42,15 @@ pip install -e ".[dev]"
 
 This adds pytest, black, mypy, and flake8.
 
+### With the Terminal UI
+
+```bash
+pip install -e ".[tui]"
+```
+
+This adds [Textual](https://textual.textualize.io/), required by the `cs-tui`
+dashboard. See [cs-tui](command-reference/cs-tui.md) for usage.
+
 ### Virtual Environment
 
 ```bash
