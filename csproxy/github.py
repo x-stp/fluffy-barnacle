@@ -268,31 +268,51 @@ class GitHubManager:
                 return cs
         return None
 
-    def create_codespace(self, repo: Optional[str] = None, machine: str = "2-core") -> dict:
+    def create_codespace(self, repo: Optional[str] = None, machine: str = "basicLinux32gb") -> dict:
         """
         Create a new Codespace.
 
         Args:
-            repo: Repository to create Codespace from (default: auto-detect)
-            machine: Machine type (default: '2-core')
+            repo: Repository to create Codespace from (default: auto-detect from cwd)
+            machine: Machine type (default: 'basicLinux32gb', the smallest standard
+                Linux machine). A concrete value is required: with no ``--machine``,
+                ``gh codespace create`` prompts interactively for it and fails with
+                "error getting machine: no terminal" when run from a non-TTY worker
+                thread or CI. Pass ``""`` to omit the flag (only works with a TTY).
 
         Returns:
-            Created Codespace information dictionary
+            Dict carrying the new Codespace's ``name``.
 
         Raises:
             subprocess.CalledProcessError: If creation fails
-        """
-        args = ["codespace", "create", "--machine", machine, "--json", "name,state"]
+            RuntimeError: If gh succeeds but no codespace name can be parsed
 
+        Note:
+            Unlike ``codespace list``/``view``, ``gh codespace create`` has no
+            ``--json`` flag — it prints the new codespace's name to stdout (status
+            and billing banners go to stderr), so we read the name from stdout.
+        """
+        args = ["codespace", "create"]
+        if machine:
+            args.extend(["--machine", machine])
         if repo:
             args.extend(["--repo", repo])
 
-        self.logger.info(f"Creating new Codespace (machine: {machine})...")
+        self.logger.info(f"Creating new Codespace (machine: {machine or 'gh-default'})...")
         result = self.run_gh_command(args)
-        codespace: dict = json.loads(result.stdout)
 
-        self.logger.info(f"Created Codespace: {codespace['name']}")
-        return codespace
+        # stdout is just the codespace name; take the last non-empty line in case
+        # anything else leaks onto stdout.
+        name = ""
+        for line in result.stdout.splitlines():
+            stripped = line.strip()
+            if stripped:
+                name = stripped
+        if not name:
+            raise RuntimeError("gh codespace create returned no codespace name")
+
+        self.logger.info(f"Created Codespace: {name}")
+        return {"name": name}
 
     def delete_codespace(self, name: str, force: bool = False) -> None:
         """

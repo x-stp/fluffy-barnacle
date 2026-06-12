@@ -10,7 +10,7 @@ pytest.importorskip("textual")
 from csproxy.github import GitHubManager  # noqa: E402
 from csproxy.services import Check  # noqa: E402
 from csproxy.state import State  # noqa: E402
-from csproxy.tui.app import ConfirmScreen, CsProxyTUI  # noqa: E402
+from csproxy.tui.app import ConfirmScreen, CsProxyTUI, InputScreen  # noqa: E402
 from csproxy.utils import Config  # noqa: E402
 from textual.worker import WorkerCancelled  # noqa: E402
 
@@ -267,5 +267,97 @@ def test_tui_chain_delete_confirm_invokes_service():
                 await _settle(app)
                 await pilot.pause()
             mock_delete.assert_called_once()
+
+    asyncio.run(scenario())
+
+
+def test_tui_create_prompts_and_invokes_gh():
+    async def scenario():
+        from textual.widgets import Input, TabbedContent
+
+        app = _app()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.query_one(TabbedContent).active = "tab-codespaces"
+            await pilot.pause()
+
+            with patch.object(
+                app._gh, "create_codespace", return_value={"name": "new-cs"}
+            ) as mock_create:
+                await pilot.press("c")  # open the input modal
+                await pilot.pause()
+                assert isinstance(app.screen, InputScreen)
+
+                # Type a repo and submit with Enter (the real input path).
+                app.screen.query_one("#ivalue", Input).value = "owner/repo"
+                await pilot.press("enter")
+                await _settle(app)
+                await pilot.pause()
+
+            mock_create.assert_called_once()
+            assert mock_create.call_args.kwargs.get("repo") == "owner/repo"
+
+    asyncio.run(scenario())
+
+
+def test_tui_create_defaults_to_codespaces_blank():
+    async def scenario():
+        from textual.widgets import Input, TabbedContent
+
+        app = _app()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.query_one(TabbedContent).active = "tab-codespaces"
+            await pilot.pause()
+
+            with patch.object(
+                app._gh, "create_codespace", return_value={"name": "blank-cs"}
+            ) as mock_create:
+                await pilot.press("c")
+                await pilot.pause()
+                # Field is prefilled with the public template; accept it as-is.
+                assert app.screen.query_one("#ivalue", Input).value == "github/codespaces-blank"
+                await pilot.press("enter")
+                await _settle(app)
+                await pilot.pause()
+
+            assert mock_create.call_args.kwargs.get("repo") == "github/codespaces-blank"
+
+    asyncio.run(scenario())
+
+
+def test_tui_create_empty_input_does_nothing():
+    async def scenario():
+        from textual.widgets import TabbedContent
+
+        app = _app()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.query_one(TabbedContent).active = "tab-codespaces"
+            await pilot.pause()
+
+            with patch.object(app._gh, "create_codespace") as mock_create:
+                await pilot.press("c")
+                await pilot.pause()
+                assert isinstance(app.screen, InputScreen)
+                app.screen.dismiss(None)  # cancel / empty -> no create
+                await _settle(app)
+                await pilot.pause()
+            mock_create.assert_not_called()
+
+    asyncio.run(scenario())
+
+
+def test_tui_create_warns_off_codespaces_tab():
+    async def scenario():
+        app = _app()
+        async with app.run_test() as pilot:
+            await pilot.pause()  # default tab is Tunnels
+            with patch.object(app._gh, "create_codespace") as mock_create:
+                await pilot.press("c")
+                await pilot.pause()
+                # No input modal on the wrong tab, and no create attempted.
+                assert not isinstance(app.screen, InputScreen)
+            mock_create.assert_not_called()
 
     asyncio.run(scenario())

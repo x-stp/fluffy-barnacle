@@ -100,6 +100,7 @@ confirmation first):
 | Key | Action |
 |-----|--------|
 | `r` | Refresh now |
+| `c` | Create a codespace (Codespaces tab; prompts for `owner/repo`) |
 | `s` | Start the selected codespace / chain |
 | `x` | Stop the selected tunnel / codespace / chain (confirm) |
 | `d` | Drain the selected tunnel |

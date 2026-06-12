@@ -4,9 +4,10 @@ Textual app for csproxy — a live monitor with actions.
 
 Renders the same structured data the CLI uses (via csproxy.services), refreshing
 on a timer, and drives the same service layer for mutating actions (stop/drain/
-rotate tunnels; start/stop/delete codespaces). All blocking work (gh/ssh/curl
-subprocess calls) runs in threaded workers so the UI never freezes, and
-destructive actions are gated behind a confirmation modal.
+rotate tunnels; create/start/stop/delete codespaces). All blocking work (gh/ssh/
+curl subprocess calls) runs in threaded workers so the UI never freezes,
+destructive actions are gated behind a confirmation modal, and create prompts
+for its repo through an input modal.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from textual.widgets import (
     DataTable,
     Footer,
     Header,
+    Input,
     Label,
     Log,
     Static,
@@ -86,6 +88,64 @@ class ConfirmScreen(ModalScreen[bool]):
         self.dismiss(False)
 
 
+class InputScreen(ModalScreen[Optional[str]]):
+    """A small text-input modal. Dismisses with the entered text, or None on
+    cancel/empty. Used to collect e.g. the repo for a codespace create."""
+
+    CSS = """
+    InputScreen { align: center middle; }
+    #idialog {
+        grid-size: 2;
+        grid-gutter: 1 2;
+        grid-rows: 1fr 3 3;
+        padding: 1 2;
+        width: 70;
+        height: 14;
+        border: thick $background 80%;
+        background: $surface;
+    }
+    #iprompt { column-span: 2; height: 1fr; content-align: center middle; }
+    #ivalue { column-span: 2; }
+    Button { width: 100%; }
+    """
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def __init__(self, prompt: str, value: str = "", placeholder: str = "") -> None:
+        super().__init__()
+        self._prompt = prompt
+        self._value = value
+        self._placeholder = placeholder
+
+    def compose(self) -> ComposeResult:
+        yield Grid(
+            Label(self._prompt, id="iprompt"),
+            Input(value=self._value, placeholder=self._placeholder, id="ivalue"),
+            Button("OK", variant="primary", id="ok"),
+            Button("Cancel", variant="default", id="cancel"),
+            id="idialog",
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#ivalue", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self._submit()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "ok":
+            self._submit()
+        else:
+            self.dismiss(None)
+
+    def _submit(self) -> None:
+        value: str = self.query_one("#ivalue", Input).value.strip()
+        self.dismiss(value or None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class CsProxyTUI(App):
     """Live monitor + actions for tunnels, codespaces, diagnostics, and logs."""
 
@@ -100,6 +160,7 @@ class CsProxyTUI(App):
 
     BINDINGS = [
         ("r", "refresh", "Refresh"),
+        ("c", "create", "Create"),
         ("s", "start", "Start"),
         ("x", "stop", "Stop"),
         ("d", "drain", "Drain"),
@@ -198,7 +259,7 @@ class CsProxyTUI(App):
                 f"{len(data['tunnels'])} tunnel(s) · "
                 f"{len(data['codespaces'])} codespace(s) · "
                 f"{len(self._chains)} chain(s) · "
-                f"{failures} check failure(s)  —  s/x/d/o/Del to act, r refresh, q quit"
+                f"{failures} check failure(s)  —  c new, s/x/d/o/Del to act, r refresh, q quit"
             )
 
     # ------------------------------------------------------------------
@@ -241,6 +302,35 @@ class CsProxyTUI(App):
                 lambda: stop_chain(self._config, self._gh, name),
                 f"Stopped chain {name}",
             )
+
+    def action_create(self) -> None:
+        if self._active_tab() != "tab-codespaces":
+            self.notify("Switch to the Codespaces tab to create one", severity="warning")
+            return
+
+        # Prefill from config if set, else a public template that always supports
+        # Codespaces so the field is never empty.
+        default_repo: str = str(self._config.get("codespace_repo", "") or "") or (
+            "github/codespaces-blank"
+        )
+
+        def on_result(repo: Optional[str]) -> None:
+            if not repo:
+                return
+            self.notify(f"Creating codespace from {repo}… this can take a minute")
+            self._perform(
+                lambda: self._gh.create_codespace(repo=repo),
+                f"Created codespace from {repo}",
+            )
+
+        self.push_screen(
+            InputScreen(
+                "Create codespace from repository (owner/repo):",
+                value=default_repo,
+                placeholder="owner/repo",
+            ),
+            on_result,
+        )
 
     def action_start(self) -> None:
         tab = self._active_tab()
@@ -317,18 +407,18 @@ class CsProxyTUI(App):
     # Action plumbing.
     # ------------------------------------------------------------------
 
-    def _confirm(self, question: str, fn: Callable[[], None], success: str) -> None:
+    def _confirm(self, question: str, fn: Callable[[], object], success: str) -> None:
         def on_result(confirmed: Optional[bool]) -> None:
             if confirmed:
                 self._perform(fn, success)
 
         self.push_screen(ConfirmScreen(question), on_result)
 
-    def _perform(self, fn: Callable[[], None], success: str) -> None:
+    def _perform(self, fn: Callable[[], object], success: str) -> None:
         self._run_action(fn, success)
 
     @work(thread=True, group="action")
-    def _run_action(self, fn: Callable[[], None], success: str) -> None:
+    def _run_action(self, fn: Callable[[], object], success: str) -> None:
         try:
             fn()
             self.call_from_thread(self._action_done, success, None)
