@@ -12,6 +12,18 @@ from csproxy.services import Check  # noqa: E402
 from csproxy.state import State  # noqa: E402
 from csproxy.tui.app import ConfirmScreen, CsProxyTUI  # noqa: E402
 from csproxy.utils import Config  # noqa: E402
+from textual.worker import WorkerCancelled  # noqa: E402
+
+
+async def _settle(app):
+    """Wait for queued workers to finish, tolerating the benign cancellation
+    of the exclusive 'refresh' worker that an action supersedes when it kicks
+    off its own post-action refresh. wait_for_complete() re-raises that
+    cancellation as WorkerCancelled even though the action itself completed."""
+    try:
+        await app.workers.wait_for_complete()
+    except WorkerCancelled:
+        pass
 
 
 def _tunnel_row(port=1080, status="healthy"):
@@ -119,12 +131,12 @@ def test_tui_drain_action_updates_state():
         gh = GitHubManager(config_dir=config.config_dir)
         app = CsProxyTUI(config, gh, interval=3600)
         async with app.run_test() as pilot:
-            await app.workers.wait_for_complete()
+            await _settle(app)
             await pilot.pause()
             assert app._tunnels and app._tunnels[0]["port"] == 1080
 
             await pilot.press("d")  # drain selected tunnel (no confirmation)
-            await app.workers.wait_for_complete()
+            await _settle(app)
             await pilot.pause()
 
             assert State(config.config_dir).get_tunnel_by_port(1080)["status"] == "draining"
@@ -179,7 +191,7 @@ def test_tui_stop_confirm_invokes_service():
                 await pilot.press("x")
                 await pilot.pause()
                 app.screen.dismiss(True)  # confirm "yes"
-                await app.workers.wait_for_complete()
+                await _settle(app)
                 await pilot.pause()
             mock_stop.assert_called_once()
 
@@ -252,7 +264,7 @@ def test_tui_chain_delete_confirm_invokes_service():
                 await pilot.pause()
                 assert isinstance(app.screen, ConfirmScreen)
                 app.screen.dismiss(True)
-                await app.workers.wait_for_complete()
+                await _settle(app)
                 await pilot.pause()
             mock_delete.assert_called_once()
 
