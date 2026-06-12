@@ -338,15 +338,9 @@ def cmd_stop(args, config: Config, gh: GitHubManager) -> int:
         print("[dry-run] Would stop HTTP proxy")
         return 0
 
-    tunnel = SSHTunnel(config, config.codespace_name or "")
-    tunnel.stop()
+    from .services import stop_all_tunnels
 
-    # Stop tunnels for any additional codespaces
-    for i in range(1, len(config.codespace_names)):
-        SSHTunnel(config, "", port=config.socks_port + i, pid_suffix=str(i + 1)).stop()
-
-    http = HTTPProxyManager(config)
-    http.stop()
+    stop_all_tunnels(config)
     return 0
 
 
@@ -876,7 +870,6 @@ def cmd_doctor(args, config: Config, gh: GitHubManager) -> int:
 def cmd_pool(args, config: Config, gh: GitHubManager) -> int:
     """Inspect and manage the local tunnel pool."""
     import argparse
-    import random
 
     parser = argparse.ArgumentParser(prog="cs-proxy pool")
     sub = parser.add_subparsers(dest="action", required=True)
@@ -900,22 +893,24 @@ def cmd_pool(args, config: Config, gh: GitHubManager) -> int:
             )
         return 0
 
+    from .services import drain_tunnel, rotate_pool
+
     if parsed.action == "rotate":
-        healthy = state.get_tunnels(kind="ssh", status="healthy")
-        if not healthy:
-            get_logger().error("No healthy tunnels available")
+        try:
+            print(rotate_pool(config))
+            return 0
+        except RuntimeError as e:
+            get_logger().error(str(e))
             return 1
-        print(random.choice(healthy)["port"])
-        return 0
 
     if parsed.action == "drain":
-        tunnel = state.get_tunnel_by_port(parsed.port)
-        if not tunnel:
-            get_logger().error(f"No tunnel on port {parsed.port}")
+        try:
+            drain_tunnel(config, parsed.port)
+            get_logger().info(f"Marked tunnel :{parsed.port} as draining")
+            return 0
+        except ValueError as e:
+            get_logger().error(str(e))
             return 1
-        state.update_tunnel(parsed.port, status="draining")
-        get_logger().info(f"Marked tunnel :{parsed.port} as draining")
-        return 0
 
     return 1
 
