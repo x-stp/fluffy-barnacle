@@ -49,6 +49,11 @@ dev = [
 tui = [
     "textual>=0.60",
 ]
+mcp = [
+    # v2 is planned for Q1 and may carry breaking changes; pin to the stable v1
+    # line. FastMCP (used by csproxy.mcp.server) ships inside this package.
+    "mcp>=1.25,<2",
+]
 docs = [
     "mkdocs>=1.5",
     "mkdocs-material>=9.0",
@@ -66,6 +71,7 @@ cs-serve = "csproxy.cli:main_serve"
 cs-wg = "csproxy.cli:main_wg"
 cs-tools = "csproxy.tools:main_tools"
 cs-tui = "csproxy.tui:main_tui"
+cs-mcp = "csproxy.mcp:main_mcp"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -88,7 +94,7 @@ disallow_untyped_defs = false
 # Ignoring missing imports keeps `mypy csproxy` clean whether or not the
 # interpreter running mypy happens to have these installed.
 [[tool.mypy.overrides]]
-module = ["textual.*", "yaml", "colorama", "portalocker"]
+module = ["textual.*", "mcp.*", "yaml", "colorama", "portalocker"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

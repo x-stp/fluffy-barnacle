@@ -11,6 +11,7 @@ cs-proxy provides five commands, each with its own set of subcommands.
 | [cs-wg](cs-wg.md) | `sudo cs-wg <command>` | WireGuard VPN tunnel management |
 | [cs-tools](cs-tools.md) | `cs-tools <tool> [args]` | Proxied security tool wrappers with smart tunnel rotation |
 | [cs-tui](cs-tui.md) | `cs-tui` | Interactive terminal dashboard to monitor and manage tunnels, codespaces, and chains |
+| [cs-mcp](cs-mcp.md) | `cs-mcp` | MCP server exposing the toolkit to MCP-aware clients (Claude Desktop, Claude Code, Cursor) |
 
 ## Global Options
 

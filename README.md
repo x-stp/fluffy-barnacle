@@ -42,6 +42,7 @@ Full documentation at **[https://dstours.github.io/fluffy-barnacle/](https://dst
 | **cs-serve** | Instant public HTTPS file hosting, redirect servers, custom HTTP responses, and data capture via `*.app.github.dev` |
 | **cs-wg** | Full WireGuard VPN tunnel with route management and traffic monitoring |
 | **cs-tools** | Drop-in wrappers for nmap, ffuf, httpx, nuclei, sqlmap with automatic SOCKS5 proxy arguments and smart tunnel rotation |
+| **cs-mcp** | Model Context Protocol server exposing the toolkit to MCP-aware clients (Claude Desktop, Claude Code, Cursor) |
 
 Codespace IPs rotate on each creation, giving you fresh egress IPs on demand. Each tool works from the CLI or as a Python library.
 
