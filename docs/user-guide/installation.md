@@ -51,6 +51,16 @@ pip install -e ".[tui]"
 This adds [Textual](https://textual.textualize.io/), required by the `cs-tui`
 dashboard. See [cs-tui](command-reference/cs-tui.md) for usage.
 
+### With the MCP server
+
+```bash
+pip install -e ".[mcp]"
+```
+
+This adds the official [`mcp`](https://github.com/modelcontextprotocol/python-sdk)
+SDK, required by the `cs-mcp` server that exposes the toolkit to MCP-aware
+clients. See [cs-mcp](command-reference/cs-mcp.md) for usage.
+
 ### Virtual Environment
 
 ```bash
